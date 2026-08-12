@@ -7,6 +7,7 @@
   "description": "Local-first manga translation Chrome extension powered by Koharu",
   "scripts": {
     "start": "node server/src/index.mjs",
+    "tray": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-tray.ps1",
     "start:demo": "set ENGINE_MODE=passthrough&& node server/src/index.mjs",
     "submodules": "git submodule update --init --recursive",
     "check:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1 -Check",

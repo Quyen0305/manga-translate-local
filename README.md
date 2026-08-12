@@ -54,6 +54,18 @@ Engine chưa chạy ngay khi service mới bật. Nó tự khởi động ở t�
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
 ```
 
+## Khay hệ thống Windows
+
+Khởi động biểu tượng Manga Translate ở khay hệ thống cạnh đồng hồ:
+
+```powershell
+npm run tray
+```
+
+Tray tự bật local service khi khởi động. Nhấp chuột phải vào biểu tượng để bật/tắt service, mở thư mục log, bật/tắt chạy cùng Windows hoặc thoát. `Exit Tray` chỉ đóng biểu tượng; `Stop Service and Exit` dừng cả service. Engine Koharu/CUDA vẫn chỉ được nạp khi có tác vụ dịch đầu tiên.
+
+`install-startup.ps1` hiện đăng ký tray controller; tray sẽ tự khởi động service sau khi người dùng đăng nhập Windows.
+
 ## Cài extension
 
 1. Mở `chrome://extensions`.
