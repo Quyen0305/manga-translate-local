@@ -297,7 +297,7 @@ async function checkEngine() {
   const status = document.querySelector("#engine-status");
   const result = await chrome.runtime.sendMessage({ type: "CHECK_ENGINE" });
   status.dataset.state = result.ok ? "ready" : "offline";
-  status.textContent = result.ok ? (result.data.koharu === "ready" ? "Sẵn sàng" : "Service đã chạy") : "Chưa chạy";
+  status.textContent = result.ok ? (result.data.engine === "ready" ? "Sẵn sàng" : "Service đã chạy") : "Chưa chạy";
   if (!result.ok) {
     await chrome.runtime.sendMessage({
       type: "REPORT_ERROR",

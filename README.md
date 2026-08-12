@@ -1,33 +1,54 @@
-# Manga Translate Local - Phase 2 Web Robustness
+# Manga Translate Local
 
-Chrome extension nhận diện ảnh manga trên trang web, gửi ảnh vào Koharu chạy local và dùng API do người dùng tự cấu hình để dịch phần văn bản OCR. Ảnh gốc không được gửi tới nhà cung cấp dịch.
+Chrome extension dịch manga ngay trên trang web. Extension nhận diện ảnh manga, gửi ảnh vào backend cục bộ và hiển thị ảnh đã dịch dưới dạng lớp phủ nên có thể khôi phục ảnh gốc tức thì.
 
-Mã MVP này không thu phí thuê bao. Nhà cung cấp API cloud vẫn có thể tính phí theo tài khoản của bạn; dùng Ollama/LM Studio qua `OpenAI-compatible` thì không có phí API. Dự án không sao chép backend độc quyền hoặc mã nguồn của Torii, mà tự triển khai lại lớp nhận diện ảnh và trải nghiệm trên trang.
+Từ phiên bản `0.7.0`, dự án không còn gọi `D:\koharu\koharu.exe` hoặc HTTP service Koharu ở cổng `40722`. Repo build một native worker riêng từ source Koharu `0.61.2`; backend Node giao tiếp với worker qua stdin/stdout.
 
 ## Kiến trúc
 
 ```text
 Trang manga
-  -> Content script: phát hiện img/canvas, nút dịch, khôi phục
-  -> Service worker: tải ảnh, SHA-256 cache, giữ API key
-  -> Local service :40721: queue và adapter
-  -> Koharu headless :40722: detect -> OCR -> API dịch text -> inpaint -> render
-  -> Ảnh PNG đã dịch quay lại đúng phần tử trên trang
+  -> Chrome content script: nhận diện img/canvas/background, overlay, restore
+  -> Chrome service worker: capture, SHA-256 cache, API profiles
+  -> Manga Translate service :40721
+  -> manga-engine.exe (stdin/stdout, không mở GUI và không có cổng riêng)
+  -> Koharu crates: detect -> OCR -> API dịch text -> inpaint -> render
 ```
 
-Local service tự chạy `D:\koharu\koharu.exe --headless`; không cần mở giao diện Koharu. Vì API của Koharu dùng một `current project`, Phase 1 xử lý từng ảnh tuần tự để không làm lẫn dữ liệu.
+Ảnh manga chỉ được xử lý trên máy. Nhà cung cấp OpenAI, Gemini, Claude, DeepSeek hoặc DeepL chỉ nhận phần văn bản OCR cần dịch. OpenAI-compatible có thể dùng Ollama/LM Studio để không phát sinh phí API.
 
-## Chạy local service
+## Yêu cầu build
 
-Yêu cầu: Node.js 20 trở lên và Koharu tại `D:\koharu\koharu.exe`.
+- Windows 10/11 x64.
+- Node.js 20 trở lên.
+- Rust 1.95 trở lên, cài bằng `rustup`.
+- Visual Studio 2022 C++ Build Tools.
+- LLVM có `libclang.dll` để build bindings của `koharu-llm`.
+- CUDA Toolkit chỉ cần khi chủ động build feature CUDA; bản mặc định dùng backend tương thích rộng.
+
+Source Koharu được ghim bằng Git submodule tại commit `35f3e6d` (tag `0.61.2`).
+
+## Cài và chạy
 
 ```powershell
 cd D:\translate_manga
+git submodule update --init --recursive
 npm test
+npm run build:engine
 powershell -ExecutionPolicy Bypass -File .\scripts\start-service.ps1
 ```
 
-Kiểm tra tại `http://127.0.0.1:40721/health`. Log nằm trong `.manga-translate`. Để service tự chạy khi đăng nhập Windows:
+`start-service.ps1` sẽ tự build engine nếu binary chưa tồn tại. Build đầu tiên lâu hơn do Cargo tải và biên dịch các thư viện ML. Binary nằm tại `engine\target\release\manga-engine.exe`.
+
+Kiểm tra service:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:40721/health
+```
+
+Engine chưa chạy ngay khi service mới bật. Nó tự khởi động ở tác vụ dịch đầu tiên, giữ model trong bộ nhớ cho các ảnh tiếp theo và tự dừng cùng service. Không cần mở hoặc cài ứng dụng Koharu.
+
+Để service tự chạy khi đăng nhập Windows:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
@@ -38,20 +59,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
 1. Mở `chrome://extensions`.
 2. Bật **Developer mode**.
 3. Chọn **Load unpacked** và trỏ tới `D:\translate_manga\extension`.
-4. Mở popup, bật **Bật extension**, nhập API key, bấm `↻`, chọn model API đang cấp rồi bấm **Lưu cấu hình**.
-5. Bật **Dịch tự động** để dịch ảnh ngay khi trang/lazy-load phát hiện ảnh mới, hoặc dùng nút `文` và **Dịch trang** để chạy thủ công.
+4. Mở popup, chọn provider/model, nhập API key của đúng model và bấm **Kiểm tra API và model**.
+5. Bật **Dịch tự động** hoặc dùng nút dịch từng ảnh/toàn trang.
 
-Gemini mặc định dùng `gemini-3.5-flash-lite`. Với Ollama, LM Studio hoặc API tương thích OpenAI, chọn `OpenAI-compatible`, điền Base URL dạng `http://127.0.0.1:11434/v1` và tên model.
+Mỗi cặp `provider + model` có API key và Base URL riêng. DeepL tự chọn endpoint Free/Pro theo API key; OpenAI-compatible cần Base URL như `http://127.0.0.1:11434/v1`.
 
-Sau khi nhập API key, bấm nút `↻` bên cạnh Model. Extension gọi API `/models` của chính nhà cung cấp và chỉ đưa các model dịch văn bản tương thích vào danh sách. Model vẫn là ô nhập tự do để hỗ trợ server local không có endpoint liệt kê.
+## Web robustness
 
-Với DeepL, chọn `DeepL` và nhập API key. Koharu dùng engine dịch máy `mt`; key Free có hậu tố `:fx` tự dùng `https://api-free.deepl.com`, key Pro tự dùng `https://api.deepl.com`. Base URL chỉ cần nhập khi dùng endpoint khu vực hoặc proxy riêng. Nút `↻` kiểm tra key qua `/v2/usage` trước khi lưu.
+- Nhận diện `img`, `picture`, `canvas`, CSS background và nội dung SPA/lazy-load; lọc logo, avatar và banner theo kích thước/ngữ cảnh reader.
+- Capture ưu tiên byte ảnh gốc, sau đó fallback sang screenshot + crop khi gặp `blob:`, canvas tainted, CORS hoặc hotlink protection.
+- Ảnh dịch là lớp phủ, không thay đổi `src`/`srcset`; **Khôi phục** gỡ lớp phủ và trả lại ảnh gốc ngay.
+- Cache IndexedDB tự khôi phục bản dịch khi chuyển chương, Back/Forward hoặc ảnh lazy-load xuất hiện lại.
+- Hỗ trợ dịch từng ảnh/toàn trang, dừng hàng đợi, bật/tắt extension và dịch tự động.
+- Popup lưu tối đa 20 lỗi gần nhất với stage, provider, HTTP status, request ID và gợi ý xử lý; API key không được ghi vào lịch sử lỗi.
 
-Nếu endpoint dự đoán trả `401/403` và Base URL đang để trống, service tự thử endpoint Free/Pro còn lại trước khi báo lỗi. DeepL yêu cầu **Authentication Key** trong mục API Keys của tài khoản có gói DeepL API; mật khẩu đăng nhập hoặc token của ứng dụng DeepL không dùng được.
-
-Mỗi cặp `provider + model` có hồ sơ API key/Base URL riêng. Khi đổi model, popup tự nạp đúng hồ sơ đã lưu; model mới chưa cấu hình sẽ để trống key. Bấm **Kiểm tra API và model** để xác nhận key hợp lệ và model nằm trong danh sách được API cấp quyền trước khi lưu.
-
-## Pipeline Koharu của MVP
+## Pipeline engine
 
 1. `comic-text-bubble-detector`
 2. `comic-text-detector-seg`
@@ -62,33 +84,29 @@ Mỗi cặp `provider + model` có hồ sơ API key/Base URL riêng. Khi đổi 
 7. `lama-manga`
 8. `koharu-renderer`
 
-Lần đầu chạy một model Koharu có thể mất thời gian vì engine cần tải model. Timeout mặc định là 15 phút và có thể đổi bằng biến môi trường trong `.env.example`.
+Nếu máy đã có cache `C:\Users\PC\AppData\Local\Koharu` tương thích, engine tái sử dụng runtime/model ở đó nhưng không chạy ứng dụng hay service Koharu. Trên máy sạch, model OCR/inpainting được tải vào `.manga-translate\engine-data` trong lần dùng đầu. Tác vụ được xử lý tuần tự để tránh tranh chấp GPU và giữ ổn định bộ nhớ.
 
-## Nền tảng Phase 1
+## Cấu hình
 
-- Có: nhận diện `img` và `canvas`, trang tải động/lazy-load, dịch từng ảnh/toàn trang, restore, cache IndexedDB, shortcut `Alt+Shift+T` và `Alt+Shift+R`.
-- Ảnh dịch được đặt thành lớp phủ, không thay đổi `src`/`srcset` của trang; **Khôi phục** gỡ lớp phủ để trả lại ảnh gốc ngay lập tức.
-- Khi chuyển chương hoặc dùng Back/Forward, extension tự tra cache và hiển thị lại bản dịch đã có mà không gọi API dịch lần nữa.
-- Có: OpenAI, Gemini, DeepSeek, Claude, DeepL và OpenAI-compatible thông qua provider của Koharu.
-- Chưa có: editor bong bóng thủ công, tiến độ chi tiết từng stage, dịch song song và đóng gói installer/native host.
+Sao chép các giá trị cần thiết từ `.env.example` vào môi trường chạy. Các biến chính:
 
-## Phase 2: Web robustness
+- `ENGINE_EXE`: đường dẫn binary worker.
+- `ENGINE_DATA_DIR`: runtime và model cache.
+- `ENGINE_CPU=true`: ép pipeline dùng CPU.
+- `ENGINE_START_TIMEOUT_MS`: thời gian chờ engine khởi tạo.
+- `ENGINE_JOB_TIMEOUT_MS`: timeout một trang manga.
+- `ENGINE_MODE=passthrough`: chế độ test không chạy model.
 
-- Capture ưu tiên byte gốc; tự fallback sang screenshot + crop khi gặp `blob:`, canvas tainted, CORS hoặc hotlink protection.
-- Nhận diện `img`, `picture`, `canvas`, CSS background và nội dung SPA/lazy-load.
-- Detector chấm điểm kích thước, tỉ lệ, ngữ cảnh reader/chapter và loại logo/avatar/banner khỏi danh sách.
-- Chỉ đọc cache khi ảnh tiến gần viewport, tránh tải cả chương dài cùng lúc.
-- Hàng đợi toàn trang hiển thị tiến độ và có thể dừng sau ảnh đang xử lý.
-- Công tắc tổng tắt toàn bộ detector/UI/overlay; chế độ tự dịch tự xử lý ảnh mới khi trang tải động hoặc chuyển chương.
-- Popup lưu tối đa 20 lỗi gần nhất với mã lỗi, bước xử lý, provider, HTTP status, request ID và gợi ý khắc phục; URL được loại query/hash và API key không được ghi vào lịch sử.
-- Screenshot fallback hiện crop vùng đang nhìn thấy; với ảnh được bảo vệ và lớn hơn viewport, hãy thu nhỏ trang để toàn bộ ảnh vừa màn hình rồi thử lại.
-- Fixture kiểm thử nằm tại `test/fixtures/web-robustness.html`.
-
-Thông tin thành phần bên thứ ba nằm trong `THIRD_PARTY_NOTICES.md`.
-
-Chế độ kiểm thử không chạy model:
+## Kiểm thử
 
 ```powershell
-$env:KOHARU_MODE="passthrough"
-npm start
+npm test
+npm run check
+npm run check:engine
 ```
+
+GitHub Actions cũng build `manga-engine.exe` trên Windows và lưu nó dưới dạng workflow artifact.
+
+## Giấy phép
+
+Worker liên kết trực tiếp mã Koharu GPL-3.0-only, vì vậy dự án được phân phối theo GPL-3.0-only. Xem `LICENSE` và `THIRD_PARTY_NOTICES.md`. Torii chỉ được dùng để nghiên cứu hành vi nhận diện/trải nghiệm; dự án không sao chép backend, credit system hoặc mã độc quyền của Torii.

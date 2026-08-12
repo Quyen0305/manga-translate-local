@@ -1,15 +1,20 @@
 {
   "name": "manga-translate-mvp",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
+  "license": "GPL-3.0-only",
   "type": "module",
   "description": "Local-first manga translation Chrome extension powered by Koharu",
   "scripts": {
     "start": "node server/src/index.mjs",
-    "start:demo": "set KOHARU_MODE=passthrough&& node server/src/index.mjs",
+    "start:demo": "set ENGINE_MODE=passthrough&& node server/src/index.mjs",
+    "submodules": "git submodule update --init --recursive",
+    "check:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1 -Check",
+    "build:engine": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1",
+    "build:engine:cuda": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1 -Cuda",
     "fixture": "node test/fixture-server.mjs",
     "test": "node --test server/test/*.test.mjs",
-    "check": "node --check server/src/index.mjs && node --check server/src/deepl/service.mjs && node --check server/src/model-discovery/service.mjs && node --check extension/capture-utils.js && node --check extension/error-utils.js && node --check extension/profile-utils.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup/popup.js"
+    "check": "node --check server/src/index.mjs && node --check server/src/engine/worker-manager.mjs && node --check server/src/deepl/service.mjs && node --check server/src/model-discovery/service.mjs && node --check extension/capture-utils.js && node --check extension/error-utils.js && node --check extension/profile-utils.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup/popup.js"
   },
   "engines": {
     "node": ">=20"

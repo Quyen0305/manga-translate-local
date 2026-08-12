@@ -1,0 +1,4 @@
+[env]
+LLAMA_CPP_TAG = "b8935"
+NVCC_PREPEND_FLAGS = "-std=c++17 -Xcompiler /Zc:preprocessor"
+CUDA_COMPUTE_CAP = "80"

@@ -1,0 +1,3 @@
+[submodule "vendor/koharu"]
+	path = vendor/koharu
+	url = https://github.com/mayocream/koharu.git

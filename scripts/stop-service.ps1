@@ -11,9 +11,12 @@ $servicePid = Get-Content $pidFile -ErrorAction SilentlyContinue
 $process = Get-CimInstance Win32_Process -Filter "ProcessId = $servicePid" -ErrorAction SilentlyContinue
 $expectedScript = (Join-Path $projectRoot "server\src\index.mjs")
 if ($process -and $process.CommandLine -like "*server/src/index.mjs*") {
-    $koharuChildren = Get-CimInstance Win32_Process -Filter "ParentProcessId = $servicePid" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -eq "koharu.exe" -and $_.CommandLine -like "*--port 40722*" }
-    foreach ($child in $koharuChildren) {
+    $engineChildren = Get-CimInstance Win32_Process -Filter "ParentProcessId = $servicePid" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -eq "manga-engine.exe" -or
+            ($_.Name -eq "koharu.exe" -and $_.CommandLine -like "*--port 40722*")
+        }
+    foreach ($child in $engineChildren) {
         Stop-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
     }
     Stop-Process -Id $servicePid

@@ -1,0 +1,32 @@
+[package]
+name = "manga-engine"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+camino = "1.1"
+clap = { version = "4.5", features = ["derive"] }
+image = "0.25"
+koharu-app = { path = "../vendor/koharu/koharu-app" }
+koharu-core = { path = "../vendor/koharu/koharu-core" }
+koharu-llm = { path = "../vendor/koharu/koharu-llm" }
+koharu-runtime = { path = "../vendor/koharu/koharu-runtime" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.52", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+
+[features]
+cuda = ["koharu-app/cuda"]
+
+[patch.crates-io]
+candle-transformers = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
+candle-core = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
+candle-nn = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
+candle-flash-attn = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
+ug = { git = "https://github.com/mayocream/ug", branch = "cuda-dynamic-loading" }
+ug-cuda = { git = "https://github.com/mayocream/ug", branch = "cuda-dynamic-loading" }

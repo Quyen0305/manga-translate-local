@@ -1,0 +1,31 @@
+name: Build source-backed engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "engine/**"
+      - ".gitmodules"
+      - "vendor/koharu"
+      - ".github/workflows/build-engine.yml"
+  workflow_dispatch:
+
+jobs:
+  windows-engine:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+      - name: Build manga-engine
+        shell: pwsh
+        run: ./scripts/build-engine.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manga-engine-windows-x64
+          path: engine/target/release/manga-engine.exe

@@ -1,4 +1,5 @@
 import { ValidationError } from "../shared/errors.mjs";
+import { resolveDeepLEndpoint } from "../deepl/service.mjs";
 
 const PROVIDERS = new Set([
   "openai",
@@ -34,10 +35,9 @@ export function validateTranslationSettings(input) {
 }
 
 export class TranslationService {
-  constructor({ mode, processManager, koharuClient, logger }) {
+  constructor({ mode, engineManager, logger }) {
     this.mode = mode;
-    this.processManager = processManager;
-    this.koharu = koharuClient;
+    this.engine = engineManager;
     this.logger = logger;
     this.queue = Promise.resolve();
   }
@@ -53,26 +53,22 @@ export class TranslationService {
     if (this.mode === "passthrough") {
       return { bytes: job.image, contentType: job.contentType };
     }
-    const settings = validateTranslationSettings(job.settings);
-    await this.processManager.ensureRunning();
-    await this.koharu.configureProvider(settings);
-
-    let project;
-    const startedAt = Date.now();
-    try {
-      project = await this.koharu.createProject();
-      const pageId = await this.koharu.uploadPage(job.image, job.contentType, job.filename);
-      await this.koharu.runPipeline(pageId, settings);
-      const result = await this.koharu.exportRendered(pageId);
-      this.logger.info("Đã dịch ảnh", {
-        requestId: job.requestId,
-        durationMs: Date.now() - startedAt,
-        provider: settings.provider,
-        model: settings.model,
+    let settings = validateTranslationSettings(job.settings);
+    if (settings.provider === "deepl") {
+      const resolved = await resolveDeepLEndpoint({
+        apiKey: settings.apiKey,
+        baseUrl: settings.baseUrl,
       });
-      return result;
-    } finally {
-      await this.koharu.cleanupProject(project?.id);
+      settings = { ...settings, baseUrl: resolved.baseUrl };
     }
+    const startedAt = Date.now();
+    const result = await this.engine.translate({ ...job, settings });
+    this.logger.info("Đã dịch ảnh bằng manga-engine", {
+      requestId: job.requestId,
+      durationMs: Date.now() - startedAt,
+      provider: settings.provider,
+      model: settings.model,
+    });
+    return result;
   }
 }

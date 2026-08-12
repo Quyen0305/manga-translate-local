@@ -32,9 +32,10 @@ export function diagnosticHint(code) {
   const hints = {
     CAPTURE_REQUIRED: "Đưa toàn bộ ảnh vào vùng nhìn thấy hoặc thu nhỏ trang rồi thử lại.",
     EXTENSION_DISABLED: "Bật extension trong popup trước khi dịch.",
-    KOHARU_ERROR: "Kiểm tra Koharu, model OCR và log local service.",
+    ENGINE_ERROR: "Kiểm tra manga-engine, model OCR và log local service.",
+    KOHARU_ERROR: "Kiểm tra manga-engine, model OCR và log local service.",
     PROVIDER_API_ERROR: "Kiểm tra API Authentication Key, quota và Base URL. Với DeepL, không dùng mật khẩu hoặc token ứng dụng.",
-    TIMEOUT: "Tác vụ quá lâu; thử lại với một ảnh hoặc tăng timeout của Koharu.",
+    TIMEOUT: "Tác vụ quá lâu; thử lại với một ảnh hoặc tăng timeout của manga-engine.",
     VALIDATION_ERROR: "Kiểm tra nhà cung cấp, model, ngôn ngữ và định dạng ảnh.",
     SERVICE_UNAVAILABLE: "Khởi động local service tại cổng 40721 rồi thử lại.",
   };

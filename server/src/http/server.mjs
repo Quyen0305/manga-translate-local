@@ -39,7 +39,7 @@ function json(res, status, body) {
   res.end(data);
 }
 
-export function createHttpServer({ config, translationService, modelDiscoveryService, processManager, logger }) {
+export function createHttpServer({ config, translationService, modelDiscoveryService, engineManager, logger }) {
   return http.createServer(async (req, res) => {
     const requestId = header(req, "x-request-id", crypto.randomUUID());
     const startedAt = Date.now();
@@ -52,16 +52,17 @@ export function createHttpServer({ config, translationService, modelDiscoverySer
         return res.end();
       }
       if (req.method === "GET" && req.url === "/health") {
-        const koharuReady = config.koharu.mode === "passthrough" || await processManager.isReady();
+        const engineReady = config.engine.mode === "passthrough" || await engineManager.isReady();
         return json(res, 200, {
           status: "ok",
-          mode: config.koharu.mode,
-          koharu: koharuReady ? "ready" : "stopped",
-          version: "0.6.0",
+          mode: config.engine.mode,
+          engine: engineReady ? "ready" : "stopped",
+          engineSource: "koharu-0.61.2",
+          version: "0.7.0",
         });
       }
       if (req.method === "GET" && req.url === "/ready") {
-        const ready = config.koharu.mode === "passthrough" || await processManager.isReady();
+        const ready = config.engine.mode === "passthrough" || await engineManager.isReady();
         return json(res, ready ? 200 : 503, { status: ready ? "ready" : "not_ready" });
       }
       if (req.method === "POST" && req.url === "/api/v1/models") {

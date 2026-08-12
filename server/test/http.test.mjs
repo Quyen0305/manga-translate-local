@@ -10,7 +10,7 @@ async function withServer(run) {
       return { bytes: job.image, contentType: job.contentType };
     },
   };
-  const processManager = { async isReady() { return true; } };
+  const engineManager = { async isReady() { return true; } };
   const modelDiscoveryService = {
     async list() {
       return [{ id: "model-from-api", name: "Model from API" }];
@@ -18,13 +18,13 @@ async function withServer(run) {
   };
   const config = {
     service: { maxImageBytes: 1024 * 1024 },
-    koharu: { mode: "passthrough" },
+    engine: { mode: "passthrough" },
   };
   const server = createHttpServer({
     config,
     translationService,
     modelDiscoveryService,
-    processManager,
+    engineManager,
     logger: silentLogger,
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -43,8 +43,9 @@ test("health trả trạng thái service", async () => {
     assert.deepEqual(await response.json(), {
       status: "ok",
       mode: "passthrough",
-      koharu: "ready",
-      version: "0.6.0",
+      engine: "ready",
+      engineSource: "koharu-0.61.2",
+      version: "0.7.0",
     });
   });
 });

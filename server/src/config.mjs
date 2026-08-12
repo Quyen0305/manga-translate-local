@@ -1,5 +1,16 @@
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ValidationError } from "./shared/errors.mjs";
+
+const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
+const installedKoharuData = process.env.LOCALAPPDATA
+  ? path.join(process.env.LOCALAPPDATA, "Koharu")
+  : "";
+const defaultEngineData = installedKoharuData
+  && fs.existsSync(path.join(installedKoharuData, "runtime"))
+  ? installedKoharuData
+  : path.join(projectRoot, ".manga-translate", "engine-data");
 
 function integer(name, fallback, minimum = 1) {
   const raw = process.env[name];
@@ -19,9 +30,9 @@ function boolean(name, fallback) {
 }
 
 export function loadConfig() {
-  const mode = process.env.KOHARU_MODE ?? "real";
+  const mode = process.env.ENGINE_MODE ?? "real";
   if (!["real", "passthrough"].includes(mode)) {
-    throw new ValidationError("KOHARU_MODE phải là real hoặc passthrough");
+    throw new ValidationError("ENGINE_MODE phải là real hoặc passthrough");
   }
 
   const config = {
@@ -30,19 +41,23 @@ export function loadConfig() {
       port: integer("SERVICE_PORT", 40721),
       maxImageBytes: integer("MAX_IMAGE_BYTES", 40 * 1024 * 1024),
     },
-    koharu: {
+    engine: {
       mode,
-      executable: process.env.KOHARU_EXE ?? "D:\\koharu\\koharu.exe",
-      host: process.env.KOHARU_HOST ?? "127.0.0.1",
-      port: integer("KOHARU_PORT", 40722),
-      cpu: boolean("KOHARU_CPU", false),
-      startTimeoutMs: integer("KOHARU_START_TIMEOUT_MS", 120_000),
-      jobTimeoutMs: integer("KOHARU_JOB_TIMEOUT_MS", 900_000),
+      executable: process.env.ENGINE_EXE
+        ?? path.join(projectRoot, "engine", "target", "release", "manga-engine.exe"),
+      dataDir: process.env.ENGINE_DATA_DIR ?? defaultEngineData,
+      workDir: process.env.ENGINE_WORK_DIR ?? path.join(projectRoot, ".manga-translate", "jobs"),
+      cpu: boolean("ENGINE_CPU", false),
+      startTimeoutMs: integer("ENGINE_START_TIMEOUT_MS", 900_000),
+      jobTimeoutMs: integer("ENGINE_JOB_TIMEOUT_MS", 900_000),
+      arguments: [],
     },
   };
 
-  if (mode === "real" && !fs.existsSync(config.koharu.executable)) {
-    throw new ValidationError(`Không tìm thấy Koharu tại ${config.koharu.executable}`);
+  if (mode === "real" && !fs.existsSync(config.engine.executable)) {
+    throw new ValidationError(
+      `Không tìm thấy manga-engine tại ${config.engine.executable}. Hãy chạy npm run build:engine trước.`,
+    );
   }
   return config;
 }

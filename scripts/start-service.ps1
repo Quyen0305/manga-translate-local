@@ -7,6 +7,12 @@ $stderrLog = Join-Path $runtimeDir "service-error.log"
 
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
+$engineExe = Join-Path $projectRoot "engine\target\release\manga-engine.exe"
+if (-not (Test-Path $engineExe) -and $env:ENGINE_MODE -ne "passthrough") {
+    Write-Output "manga-engine is missing; building it from Koharu source..."
+    & (Join-Path $PSScriptRoot "build-engine.ps1")
+}
+
 if (Test-Path $pidFile) {
     $existingPid = Get-Content $pidFile -ErrorAction SilentlyContinue
     if ($existingPid -and (Get-Process -Id $existingPid -ErrorAction SilentlyContinue)) {

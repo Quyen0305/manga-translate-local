@@ -20,6 +20,12 @@ export class KoharuError extends AppError {
   }
 }
 
+export class EngineError extends AppError {
+  constructor(message, status = 502, details) {
+    super(message, "ENGINE_ERROR", status, details);
+  }
+}
+
 export class TimeoutError extends AppError {
   constructor(message) {
     super(message, "TIMEOUT", 504);
