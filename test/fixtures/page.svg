@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960" viewBox="0 0 720 960">
+  <rect width="720" height="960" fill="white"/>
+  <g fill="none" stroke="#111" stroke-width="8">
+    <rect x="30" y="30" width="660" height="420"/>
+    <rect x="30" y="480" width="315" height="450"/>
+    <rect x="375" y="480" width="315" height="450"/>
+    <ellipse cx="360" cy="220" rx="230" ry="100"/>
+  </g>
+  <g font-family="Arial" font-size="38" font-weight="700" text-anchor="middle" fill="#111">
+    <text x="360" y="210">THIS IS A MANGA PAGE</text>
+    <text x="360" y="260">WITH DIALOGUE</text>
+    <text x="187" y="680">PANEL ONE</text>
+    <text x="532" y="680">PANEL TWO</text>
+  </g>
+</svg>

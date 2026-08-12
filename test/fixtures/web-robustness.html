@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manga Translate Web Robustness Fixture</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #17191d; color: #fff; font-family: Arial, sans-serif; }
+      header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; height: 54px; padding: 8px 16px; background: #25282e; }
+      header img { width: 38px; height: 38px; }
+      main { width: min(760px, 100%); margin: 0 auto; padding: 20px; }
+      .reader-page { display: block; width: 100%; height: auto; margin: 0 0 24px; background: #fff; }
+      .manga-background { width: 100%; aspect-ratio: 3 / 4; margin-bottom: 24px; background: #fff center / cover no-repeat; }
+      canvas { display: block; width: 100%; aspect-ratio: 3 / 4; background: #fff; }
+      .avatar { position: fixed; left: 16px; bottom: 16px; width: 180px; height: 180px; border-radius: 50%; }
+    </style>
+  </head>
+  <body>
+    <header><img src="logo.svg" alt="Site logo"><strong>Reader fixture</strong></header>
+    <img class="avatar profile-icon" src="decoration.svg" alt="Profile avatar">
+    <main id="manga-reader" class="chapter-reader">
+      <picture><img id="raster-page" class="reader-page manga-page" alt="Chapter page 1"></picture>
+      <div class="manga-background" role="img" aria-label="Manga chapter page 2"></div>
+      <canvas id="manga-canvas" class="reader-page" width="720" height="960"></canvas>
+    </main>
+    <script>
+      const canvas = document.querySelector("#manga-canvas");
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.strokeStyle = "#111";
+      context.lineWidth = 8;
+      context.strokeRect(40, 40, 640, 880);
+      context.font = "bold 46px Arial";
+      context.fillStyle = "#111";
+      context.fillText("CANVAS MANGA PAGE", 100, 180);
+
+      const raster = document.createElement("canvas");
+      raster.width = 720;
+      raster.height = 960;
+      const rasterContext = raster.getContext("2d");
+      rasterContext.fillStyle = "#fff";
+      rasterContext.fillRect(0, 0, 720, 960);
+      rasterContext.strokeStyle = "#111";
+      rasterContext.lineWidth = 8;
+      rasterContext.strokeRect(30, 30, 660, 900);
+      rasterContext.font = "bold 42px Arial";
+      rasterContext.fillStyle = "#111";
+      rasterContext.fillText("RASTER MANGA PAGE", 120, 180);
+      const rasterDataUrl = raster.toDataURL("image/png");
+      document.querySelector("#raster-page").src = rasterDataUrl;
+      document.querySelector(".manga-background").style.backgroundImage = `url("${rasterDataUrl}")`;
+
+      if (new URLSearchParams(location.search).has("extension-test")) {
+        window.__MANGA_TRANSLATE_TEST__ = true;
+        const params = new URLSearchParams(location.search);
+        const storageListeners = [];
+        const storedSettings = {
+          extensionEnabled: !params.has("disabled"),
+          autoTranslate: params.has("auto"),
+        };
+        window.__fixtureMessages = [];
+        window.__setExtensionSettings = async (next) => {
+          const changes = {};
+          for (const [key, value] of Object.entries(next)) {
+            changes[key] = { oldValue: storedSettings[key], newValue: value };
+            storedSettings[key] = value;
+          }
+          for (const listener of storageListeners) listener(changes, "local");
+        };
+        const disableButton = document.createElement("button");
+        disableButton.textContent = "Disable extension test";
+        disableButton.addEventListener("click", () => window.__setExtensionSettings({ extensionEnabled: false }));
+        const enableButton = document.createElement("button");
+        enableButton.textContent = "Enable extension test";
+        enableButton.addEventListener("click", () => window.__setExtensionSettings({ extensionEnabled: true }));
+        document.querySelector("header").append(disableButton, enableButton);
+        const translatedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960"><rect width="720" height="960" fill="white"/><rect x="30" y="30" width="660" height="900" fill="none" stroke="#147d64" stroke-width="10"/><text x="360" y="480" text-anchor="middle" font-family="Arial" font-size="48" fill="#147d64">BẢN DỊCH CACHE</text></svg>`;
+        window.chrome = {
+          storage: {
+            local: {
+              get: async (defaults) => ({ ...defaults, ...storedSettings }),
+              set: async (next) => window.__setExtensionSettings(next),
+            },
+            onChanged: { addListener(listener) { storageListeners.push(listener); } },
+          },
+          runtime: {
+            onMessage: { addListener() {} },
+            sendMessage: async (message) => {
+              window.__fixtureMessages.push(message.type);
+              if (message.type === "LOOKUP_CACHED_IMAGE") return { ok: true, hit: false };
+              if (message.type === "TRANSLATE_IMAGE") {
+                await new Promise((resolve) => setTimeout(resolve, 120));
+                if (params.has("fail")) {
+                  return {
+                    ok: false,
+                    code: "PROVIDER_API_ERROR",
+                    error: "API key DeepL không hợp lệ",
+                    httpStatus: 403,
+                    requestId: "fixture-request",
+                    reported: true,
+                  };
+                }
+                return { ok: true, cached: true, dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(translatedSvg)}` };
+              }
+              return { ok: true };
+            },
+          },
+        };
+        const script = document.createElement("script");
+        script.src = "/extension/content.js";
+        document.body.appendChild(script);
+      }
+    </script>
+  </body>
+</html>

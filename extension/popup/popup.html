@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manga Translate Local</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Manga Translate</h1>
+        <p>Koharu local engine</p>
+      </div>
+      <span id="engine-status" data-state="checking">Đang kiểm tra</span>
+    </header>
+
+    <section class="mode-controls" aria-label="Chế độ hoạt động">
+      <label class="toggle"><input id="extension-enabled" type="checkbox"><span></span>Bật extension</label>
+      <label class="toggle"><input id="auto-translate" type="checkbox"><span></span>Dịch tự động</label>
+    </section>
+
+    <main>
+      <label>Nhà cung cấp
+        <select id="provider">
+          <option value="gemini">Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="claude">Claude</option>
+          <option value="deepl">DeepL</option>
+          <option value="openai-compatible">OpenAI-compatible</option>
+        </select>
+      </label>
+
+      <label>API key
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false">
+        <small id="profile-status">Key riêng cho provider/model đang chọn</small>
+      </label>
+
+      <label id="base-url-row" hidden><span id="base-url-label">Base URL</span>
+        <input id="base-url" type="url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off" spellcheck="false">
+        <small id="base-url-status"></small>
+      </label>
+
+      <label id="model-row">Model
+        <span class="model-control">
+          <input id="model" type="text" list="model-options" autocomplete="off" spellcheck="false">
+          <button id="refresh-models" class="icon-button" type="button" title="Tải danh sách model từ API" aria-label="Tải danh sách model">↻</button>
+        </span>
+        <datalist id="model-options"></datalist>
+        <small id="model-status"></small>
+      </label>
+
+      <button id="check-api" class="check-api" type="button">Kiểm tra API và model</button>
+
+      <label>Ngôn ngữ đích
+        <select id="target-language">
+          <option value="vi">Tiếng Việt</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="zh">中文</option>
+        </select>
+      </label>
+
+      <details>
+        <summary>Nâng cao</summary>
+        <label id="system-prompt-row">System prompt
+          <textarea id="system-prompt" rows="3"></textarea>
+        </label>
+        <div class="thresholds">
+          <label>Rộng tối thiểu<input id="min-width" type="number" min="80" step="10"></label>
+          <label>Cao tối thiểu<input id="min-height" type="number" min="80" step="10"></label>
+        </div>
+      </details>
+    </main>
+
+    <section class="error-panel" aria-labelledby="error-title">
+      <div class="error-heading">
+        <div>
+          <strong id="error-title">Chi tiết lỗi</strong>
+          <span id="error-count">0</span>
+        </div>
+        <button id="clear-errors" class="icon-button" type="button" title="Xóa lịch sử lỗi" aria-label="Xóa lịch sử lỗi">×</button>
+      </div>
+      <p id="error-empty">Chưa ghi nhận lỗi.</p>
+      <div id="error-list" aria-live="polite"></div>
+    </section>
+
+    <footer>
+      <button id="clear-cache" class="secondary">Xóa cache <span id="cache-count"></span></button>
+      <button id="save" class="primary">Lưu cấu hình</button>
+    </footer>
+    <p id="message" role="status"></p>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

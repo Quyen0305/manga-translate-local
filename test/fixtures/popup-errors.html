@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Popup Error Fixture</title>
+    <link rel="stylesheet" href="/extension/popup/popup.css">
+  </head>
+  <body>
+    <header>
+      <div><h1>Manga Translate</h1><p>Koharu local engine</p></div>
+      <span id="engine-status" data-state="ready">Service đã chạy</span>
+    </header>
+    <section class="mode-controls">
+      <label class="toggle"><input type="checkbox" checked><span></span>Bật extension</label>
+      <label class="toggle"><input type="checkbox" checked><span></span>Dịch tự động</label>
+    </section>
+    <main>
+      <label>Nhà cung cấp<select><option>DeepL</option></select></label>
+      <label>API key<input type="password" value="hidden"></label>
+      <label>Model<input value="mt" readonly></label>
+    </main>
+    <section class="error-panel" aria-labelledby="error-title">
+      <div class="error-heading">
+        <div><strong id="error-title">Chi tiết lỗi</strong><span id="error-count">2</span></div>
+        <button id="clear-errors" class="icon-button" type="button" title="Xóa lịch sử lỗi">×</button>
+      </div>
+      <p id="error-empty" hidden>Chưa ghi nhận lỗi.</p>
+      <div id="error-list">
+        <article class="error-entry">
+          <div class="error-entry-header"><span class="error-code">PROVIDER_API_ERROR</span><time class="error-time">15:42 12/08</time></div>
+          <p class="error-message">API key DeepL không hợp lệ hoặc không có quyền truy cập</p>
+          <p class="error-meta">Bước: TRANSLATE_IMAGE · API: deepl · HTTP: 403 · Ảnh: page-114.png · Request ID: req-123</p>
+          <p class="error-hint">Kiểm tra API key, quota, Base URL và quyền của model.</p>
+        </article>
+        <article class="error-entry">
+          <div class="error-entry-header"><span class="error-code">CAPTURE_REQUIRED</span><time class="error-time">15:40 12/08</time></div>
+          <p class="error-message">Ảnh bị chặn tải và lớn hơn viewport</p>
+          <p class="error-meta">Trang: https://mangadex.org/chapter/example</p>
+          <p class="error-hint">Đưa toàn bộ ảnh vào vùng nhìn thấy hoặc thu nhỏ trang rồi thử lại.</p>
+        </article>
+      </div>
+    </section>
+    <footer><button class="secondary">Xóa cache</button><button class="primary">Lưu cấu hình</button></footer>
+    <p id="message" role="status"></p>
+  </body>
+</html>

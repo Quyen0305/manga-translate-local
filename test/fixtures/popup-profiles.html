@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Popup Profiles Fixture</title>
+    <link rel="stylesheet" href="/extension/popup/popup.css">
+  </head>
+  <body>
+    <header><div><h1>Manga Translate</h1><p>Koharu local engine</p></div><span id="engine-status">Đang kiểm tra</span></header>
+    <section class="mode-controls">
+      <label class="toggle"><input id="extension-enabled" type="checkbox"><span></span>Bật extension</label>
+      <label class="toggle"><input id="auto-translate" type="checkbox"><span></span>Dịch tự động</label>
+    </section>
+    <main>
+      <label>Nhà cung cấp<select id="provider"><option value="openai">OpenAI</option><option value="deepl">DeepL</option></select></label>
+      <label>API key<input id="api-key" type="password"><small id="profile-status"></small></label>
+      <label id="base-url-row" hidden><span id="base-url-label">Base URL</span><input id="base-url"><small id="base-url-status"></small></label>
+      <label id="model-row">Model<span class="model-control"><input id="model" list="model-options"><button id="refresh-models" class="icon-button" type="button">↻</button></span><datalist id="model-options"></datalist><small id="model-status"></small></label>
+      <button id="check-api" class="check-api" type="button">Kiểm tra API và model</button>
+      <label>Ngôn ngữ đích<select id="target-language"><option value="vi">Tiếng Việt</option></select></label>
+      <details><summary>Nâng cao</summary><label id="system-prompt-row">System prompt<textarea id="system-prompt"></textarea></label><div class="thresholds"><label>Rộng<input id="min-width" type="number"></label><label>Cao<input id="min-height" type="number"></label></div></details>
+    </main>
+    <section class="error-panel"><div class="error-heading"><div><strong>Chi tiết lỗi</strong><span id="error-count">0</span></div><button id="clear-errors" class="icon-button" type="button">×</button></div><p id="error-empty">Chưa ghi nhận lỗi.</p><div id="error-list"></div></section>
+    <footer><button id="clear-cache" class="secondary">Xóa cache <span id="cache-count"></span></button><button id="save" class="primary">Lưu cấu hình</button></footer>
+    <p id="message" role="status"></p>
+    <script>
+      const stored = {
+        extensionEnabled: true,
+        provider: "openai",
+        model: "model-a",
+        apiKey: "key-a",
+        baseUrl: "",
+        targetLanguage: "vi",
+        systemPrompt: "Translate",
+        minWidth: 280,
+        minHeight: 280,
+        minArea: 120000,
+        autoTranslate: false,
+        restoreCacheOnLoad: true,
+        apiProfiles: {
+          "openai::model-a": { apiKey: "key-a", baseUrl: "" },
+          "openai::model-b": { apiKey: "key-b", baseUrl: "" }
+        },
+        providerModels: { openai: "model-a" },
+        errorLog: []
+      };
+      const listeners = [];
+      window.chrome = {
+        storage: {
+          local: {
+            get: async (defaults) => ({ ...defaults, ...stored }),
+            set: async (next) => Object.assign(stored, next),
+          },
+          onChanged: { addListener(listener) { listeners.push(listener); } },
+        },
+        runtime: {
+          sendMessage: async (message) => {
+            if (message.type === "CHECK_ENGINE") return { ok: true, data: { koharu: "stopped" } };
+            if (message.type === "CACHE_COUNT") return { ok: true, count: 0 };
+            if (message.type === "GET_ERROR_LOG") return { ok: true, errors: [] };
+            if (message.type === "LIST_MODELS") return { ok: true, models: [{ id: "model-a" }, { id: "model-b" }] };
+            return { ok: true };
+          },
+        },
+      };
+    </script>
+    <script type="module" src="/extension/popup/popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+*.log
+.manga-translate/
+node_modules/
+dist/
+coverage/

@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Manga Translate Local",
+  "version": "0.6.0",
+  "description": "Dịch manga trên trang web bằng Koharu local và API do bạn chọn.",
+  "permissions": ["storage", "activeTab", "unlimitedStorage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Manga Translate Local",
+    "default_popup": "popup/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "translate-page": {
+      "suggested_key": { "default": "Alt+Shift+T" },
+      "description": "Dịch các ảnh manga trên trang"
+    },
+    "restore-page": {
+      "suggested_key": { "default": "Alt+Shift+R" },
+      "description": "Khôi phục ảnh gốc"
+    }
+  }
+}
