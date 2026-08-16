@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  migrateLegacyProfile,
-  profileFor,
-  profileKey,
-  saveProfile,
-} from "../../extension/profile-utils.js";
+import { migrateLegacyProfile, profileFor, profileKey, saveProfile } from "../extension/profile-utils.js";
 
 test("mỗi provider/model giữ API key riêng", () => {
   let profiles = {};
@@ -15,7 +10,6 @@ test("mỗi provider/model giữ API key riêng", () => {
     apiKey: "deepl-key:fx",
     baseUrl: "https://api-free.deepl.com/",
   });
-
   assert.equal(profileFor(profiles, "openai", "gpt-5-mini").apiKey, "key-mini");
   assert.equal(profileFor(profiles, "openai", "gpt-4.1-mini").apiKey, "key-41");
   assert.deepEqual(profileFor(profiles, "deepl", "mt"), {

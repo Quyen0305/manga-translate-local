@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { calculateCaptureCrop } from "../../extension/capture-utils.js";
+import { calculateCaptureCrop } from "../extension/capture-utils.js";
 
 test("crop quy đổi CSS pixel sang screenshot pixel", () => {
   assert.deepEqual(

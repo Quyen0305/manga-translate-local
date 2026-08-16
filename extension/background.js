@@ -4,6 +4,8 @@ import { createErrorRecord, ERROR_LOG_KEY, mergeErrorLog } from "./error-utils.j
 import { migrateLegacyProfile } from "./profile-utils.js";
 
 const SERVICE_URL = "http://127.0.0.1:40721";
+const NATIVE_HOST = "com.manga_translate.local";
+let nativeWakePromise = null;
 const DEFAULT_SETTINGS = {
   extensionEnabled: true,
   provider: "gemini",
@@ -40,6 +42,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 refreshActionState();
+wakeServiceForEnabledExtension();
 
 chrome.commands.onCommand.addListener(async (command) => {
   const { extensionEnabled } = await chrome.storage.local.get({ extensionEnabled: true });
@@ -116,7 +119,7 @@ async function lookupCachedImage(payload, sender) {
 }
 
 async function listModels(payload) {
-  const response = await fetch(`${SERVICE_URL}/api/v1/models`, {
+  const response = await serviceFetch("/api/v1/models", {
     method: "POST",
     headers: {
       "x-mt-provider": payload.provider || "",
@@ -134,11 +137,11 @@ async function listModels(payload) {
 
 async function checkEngine() {
   try {
-    const response = await fetch(`${SERVICE_URL}/health`, { signal: AbortSignal.timeout(2500) });
+    const response = await serviceFetch("/health");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return { ok: true, data: await response.json() };
-  } catch {
-    return { ok: false, error: "Local service chưa chạy" };
+  } catch (error) {
+    return { ok: false, error: error.message || "MangaTranslate.exe chưa chạy" };
   }
 }
 
@@ -168,7 +171,7 @@ async function translateImage(payload, sender) {
     "x-mt-system-prompt": encodeURIComponent(settings.systemPrompt),
     "x-mt-filename": safeFilename(payload.filename || "manga-page.png"),
   };
-  const response = await fetch(`${SERVICE_URL}/api/v1/translate-image`, {
+  const response = await serviceFetch("/api/v1/translate-image", {
     method: "POST",
     headers,
     body: source.bytes,
@@ -182,6 +185,42 @@ async function translateImage(payload, sender) {
   const contentType = response.headers.get("content-type") || "image/png";
   await cachePut({ key: cacheKey, bytes, contentType });
   return { ok: true, dataUrl: bytesToDataUrl(bytes, contentType), cached: false };
+}
+
+async function serviceFetch(path, options = {}) {
+  try {
+    return await fetch(`${SERVICE_URL}${path}`, options);
+  } catch (firstError) {
+    await wakeNativeApplication();
+    try {
+      return await fetch(`${SERVICE_URL}${path}`, options);
+    } catch (secondError) {
+      throw secondError || firstError;
+    }
+  }
+}
+
+async function wakeNativeApplication() {
+  if (!nativeWakePromise) {
+    nativeWakePromise = chrome.runtime.sendNativeMessage(NATIVE_HOST, {
+      action: "ensureRunning",
+    }).then((response) => {
+      if (!response?.ok || !response.serviceReady) {
+        throw new Error(response?.error || "MangaTranslate.exe không khởi động được service");
+      }
+      return response;
+    }).catch((error) => {
+      throw new Error(`Chưa cài Manga Translate native host: ${error.message}`);
+    }).finally(() => {
+      nativeWakePromise = null;
+    });
+  }
+  return nativeWakePromise;
+}
+
+async function wakeServiceForEnabledExtension() {
+  const { extensionEnabled } = await chrome.storage.local.get({ extensionEnabled: true });
+  if (extensionEnabled) wakeNativeApplication().catch(() => {});
 }
 
 async function loadImage(payload, sender) {

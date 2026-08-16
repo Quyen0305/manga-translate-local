@@ -1,4 +1,4 @@
-name: Build source-backed engine
+name: Build unified Windows app
 
 on:
   push:
@@ -22,10 +22,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: engine
-      - name: Build manga-engine
+      - name: Build MangaTranslate
         shell: pwsh
         run: ./scripts/build-engine.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: manga-engine-windows-x64
-          path: engine/target/release/manga-engine.exe
+          name: MangaTranslate-windows-x64
+          path: engine/target/release/MangaTranslate.exe

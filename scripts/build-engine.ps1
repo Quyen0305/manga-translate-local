@@ -63,5 +63,5 @@ if ($Cuda) { $cargoArgs += @("--features", "cuda") }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (-not $Check) {
-    Write-Output "Built: $(Join-Path $projectRoot 'engine\target\release\manga-engine.exe')"
+    Write-Output "Built: $(Join-Path $projectRoot 'engine\target\release\MangaTranslate.exe')"
 }

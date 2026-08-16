@@ -2,7 +2,7 @@
 
 ## Koharu
 
-`manga-engine` liên kết trực tiếp các crate từ source Koharu:
+`MangaTranslate.exe` liên kết trực tiếp các crate từ source Koharu:
 
 - Upstream: https://github.com/mayocream/koharu
 - Phiên bản: `0.61.2`
@@ -10,7 +10,7 @@
 - Source trong repo: `vendor/koharu` (Git submodule)
 - Giấy phép upstream: `GPL-3.0-only`
 
-Manga Translate Local là bản tích hợp đã chỉnh sửa cách khởi chạy và giao tiếp: pipeline Koharu chạy trong `manga-engine`, không dùng GUI hoặc HTTP server của Koharu. Toàn bộ phần kết hợp được phân phối theo GPL-3.0-only. Model được tải lúc chạy có thể kèm điều khoản riêng của nhà phát hành model.
+Manga Translate Local là bản tích hợp đã chỉnh sửa cách khởi chạy và giao tiếp: pipeline, HTTP localhost, Native Messaging và tray chạy trong `MangaTranslate.exe`, không dùng GUI hoặc HTTP server của Koharu. Toàn bộ phần kết hợp được phân phối theo GPL-3.0-only. Model được tải lúc chạy có thể kèm điều khoản riêng của nhà phát hành model.
 
 ## Torii
 

@@ -32,12 +32,12 @@ export function diagnosticHint(code) {
   const hints = {
     CAPTURE_REQUIRED: "Đưa toàn bộ ảnh vào vùng nhìn thấy hoặc thu nhỏ trang rồi thử lại.",
     EXTENSION_DISABLED: "Bật extension trong popup trước khi dịch.",
-    ENGINE_ERROR: "Kiểm tra manga-engine, model OCR và log local service.",
-    KOHARU_ERROR: "Kiểm tra manga-engine, model OCR và log local service.",
+    ENGINE_ERROR: "Kiểm tra model OCR và log của MangaTranslate.exe trong thư mục LocalAppData.",
+    KOHARU_ERROR: "Kiểm tra model OCR và log của MangaTranslate.exe trong thư mục LocalAppData.",
     PROVIDER_API_ERROR: "Kiểm tra API Authentication Key, quota và Base URL. Với DeepL, không dùng mật khẩu hoặc token ứng dụng.",
-    TIMEOUT: "Tác vụ quá lâu; thử lại với một ảnh hoặc tăng timeout của manga-engine.",
+    TIMEOUT: "Tác vụ quá lâu; thử lại với một ảnh và kiểm tra trạng thái engine ở biểu tượng tray.",
     VALIDATION_ERROR: "Kiểm tra nhà cung cấp, model, ngôn ngữ và định dạng ảnh.",
-    SERVICE_UNAVAILABLE: "Khởi động local service tại cổng 40721 rồi thử lại.",
+    SERVICE_UNAVAILABLE: "Chạy MangaTranslate.exe --install, sau đó reload extension và thử lại.",
   };
   return hints[code] || "Thử lại; nếu lỗi lặp lại, dùng mã lỗi và request ID để kiểm tra log service.";
 }
