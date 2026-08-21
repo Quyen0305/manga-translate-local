@@ -1,6 +1,6 @@
 [package]
 name = "manga-translate"
-version = "0.8.0"
+version = "0.12.0"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
@@ -11,16 +11,22 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
+async-trait = "0.1"
 axum = "0.8"
-camino = "1.1"
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
-koharu-app = { path = "../vendor/koharu/koharu-app" }
-koharu-core = { path = "../vendor/koharu/koharu-core" }
-koharu-llm = { path = "../vendor/koharu/koharu-llm" }
-koharu-runtime = { path = "../vendor/koharu/koharu-runtime" }
+koharu-config = { path = "../vendor/koharu-0.70.2/crates/koharu-config" }
+koharu-ml = { path = "../vendor/koharu-0.70.2/crates/koharu-ml" }
+koharu-pipeline = { path = "../vendor/koharu-0.70.2/crates/koharu-pipeline" }
+koharu-rasterizer = { path = "../vendor/koharu-0.70.2/crates/koharu-rasterizer", features = ["native"] }
+koharu-renderer = { path = "../vendor/koharu-0.70.2/crates/koharu-renderer" }
+koharu-runtime = { path = "../vendor/koharu-0.70.2/crates/koharu-runtime" }
+koharu-scene = { path = "../vendor/koharu-0.70.2/crates/koharu-scene" }
+koharu-secrets = { path = "../vendor/koharu-0.70.2/crates/koharu-secrets" }
+koharu-translator = { path = "../vendor/koharu-0.70.2/crates/koharu-translator" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sysinfo = "0.39"
 reqwest = { version = "0.13", features = ["json"] }
 tempfile = "3.24"
 tokio = { version = "1.52", features = ["full"] }
@@ -35,6 +41,8 @@ uuid = { version = "1.18", features = ["v4"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_ProcessStatus",
     "Win32_System_Threading",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
@@ -42,12 +50,4 @@ windows-sys = { version = "0.61", features = [
 winreg = "0.56"
 
 [features]
-cuda = ["koharu-app/cuda"]
-
-[patch.crates-io]
-candle-transformers = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
-candle-core = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
-candle-nn = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
-candle-flash-attn = { git = "https://github.com/mayocream/candle", branch = "flash-attn" }
-ug = { git = "https://github.com/mayocream/ug", branch = "cuda-dynamic-loading" }
-ug-cuda = { git = "https://github.com/mayocream/ug", branch = "cuda-dynamic-loading" }
+cuda = []

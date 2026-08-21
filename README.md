@@ -1,8 +1,8 @@
 # Manga Translate Local
 
-Chrome extension dịch manga trực tiếp trên trang web bằng một ứng dụng Windows hợp nhất được xây dựng từ mã nguồn Koharu `0.61.2`.
+Chrome extension dịch manga trực tiếp trên trang web bằng một ứng dụng Windows hợp nhất được xây dựng từ mã nguồn Koharu `0.70.2`.
 
-Từ phiên bản `0.8.0`, toàn bộ local HTTP API, model discovery, kiểm tra provider, hàng đợi dịch, pipeline Koharu, Native Messaging và biểu tượng khay hệ thống nằm trong một file:
+Từ phiên bản `0.8.0`, toàn bộ local HTTP API, model discovery, kiểm tra provider, hàng đợi dịch, pipeline Koharu, Native Messaging và biểu tượng khay hệ thống nằm trong một file. Phiên bản `0.10.0` chuyển engine sang pipeline scene-native của Koharu `0.70.2`; phiên bản `0.11.0` bổ sung quản lý vòng đời engine; phiên bản `0.12.0` bổ sung kiểm tra runtime và quản lý dữ liệu Koharu cũ:
 
 ```text
 MangaTranslate.exe
@@ -21,6 +21,10 @@ MangaTranslate.exe
 - Mỗi cặp provider/model có API key và Base URL riêng, kèm kiểm tra API và tải danh sách model.
 - Lưu tối đa 20 lỗi gần nhất với bước lỗi, provider, HTTP status, request ID và gợi ý xử lý.
 - Tự đánh thức ứng dụng Windows qua Chrome Native Messaging; không cần mở Koharu thủ công.
+- Kiểm tra GPU/driver/CUDA, hiển thị dung lượng engine và tự fallback CPU cho lỗi tương thích CUDA.
+- Theo dõi trạng thái `sleeping/loading/ready/busy`, RAM/VRAM và tự giải phóng model sau thời gian không hoạt động.
+- Kiểm tra từng thành phần runtime `0.70.2`, phát hiện gói cài dở và tách riêng dung lượng active/legacy.
+- Dọn cache, runtime hoặc model Koharu cũ theo whitelist; không xóa project hay runtime active.
 
 ## Kiến trúc
 
@@ -49,10 +53,10 @@ Native Messaging chỉ truyền lệnh điều khiển nhỏ. Ảnh manga đi qu
 - Rust `1.95` trở lên.
 - Visual Studio 2022 C++ Build Tools.
 - LLVM có `libclang.dll`.
-- CUDA Toolkit nếu build bản GPU.
+- Ninja và LLVM/clang-cl để build shim Torch trên Windows.
 - Node.js `20` trở lên chỉ để chạy test JavaScript.
 
-Source Koharu được ghim tại phiên bản `0.61.2` trong `vendor/koharu`.
+Source Koharu mới được ghim trong `vendor/koharu-0.70.2`. Bản `0.61.2` cũ vẫn nằm trong `vendor/koharu` để rollback trong giai đoạn migration.
 
 ## Cài đặt
 
@@ -90,7 +94,7 @@ Bỏ `-Cuda` để build bản CPU.
 
 Installer sẽ:
 
-1. Sao chép binary vào `%LOCALAPPDATA%\MangaTranslate\MangaTranslate.exe`.
+1. Sao chép `MangaTranslate.exe` và `koharu-torch.dll` vào `%LOCALAPPDATA%\MangaTranslate`.
 2. Tìm extension ID trong các Chrome profile đã load extension.
 3. Tạo manifest `com.manga_translate.local` với đúng allowlist extension.
 4. Đăng ký Native Messaging trong `HKCU`.
@@ -117,8 +121,11 @@ Phím tắt mặc định:
 Menu chuột phải của biểu tượng tray gồm:
 
 - Trạng thái service và engine.
+- RAM/VRAM hiện tại của tiến trình.
 - Bật/tắt local service.
-- Khởi tạo lại engine để giải phóng model khỏi RAM/VRAM.
+- Nạp, giải phóng hoặc khởi động lại engine mà không tắt tray.
+- Bật/tắt nạp sẵn lõi engine khi khởi động ứng dụng.
+- Mở thư mục model/runtime đang được sử dụng.
 - Mở thư mục log.
 - Bật/tắt chạy cùng Windows.
 - Cài lại Chrome Integration.
@@ -137,18 +144,15 @@ API key được lưu trong `chrome.storage.local` của extension. Key không �
 
 ## Pipeline Koharu
 
-Mỗi ảnh được xử lý tuần tự qua:
+Mỗi ảnh dùng workflow scene-native mới:
 
-1. `comic-text-bubble-detector`
-2. `comic-text-detector-seg`
-3. `speech-bubble-segmentation`
-4. `paddle-ocr-vl-1.6`
-5. `yuzumarker-font-detection`
-6. `llm`
-7. `lama-manga`
-8. `koharu-renderer`
+1. `koharu-layout-rfdetr-seg-2xl`: nhận diện layout, vùng chữ và bong bóng.
+2. `paddleocr-vl-1.6`: OCR.
+3. Provider API đã chọn: dịch các segment bằng keyed output.
+4. `lama`: xóa chữ nguồn.
+5. `koharu-renderer` và `koharu-rasterizer`: dàn chữ và xuất PNG.
 
-Engine chỉ khởi tạo ở yêu cầu dịch đầu tiên. `engine: "sleeping"` nghĩa là service đã sẵn sàng nhưng model chưa chiếm RAM/VRAM.
+Engine chỉ khởi tạo ở yêu cầu dịch đầu tiên. `engine: "sleeping"` nghĩa là service đã sẵn sàng nhưng pipeline/model đã được giải phóng. Mặc định watchdog tự đưa engine về trạng thái này sau 15 phút không dịch; timeout và preload có thể đổi trong popup **Engine & dung lượng**.
 
 ## Dữ liệu và dung lượng
 
@@ -162,10 +166,10 @@ Thứ tự chọn thư mục model/runtime:
 
 1. Tham số `--data-dir DIR`.
 2. Biến môi trường `ENGINE_DATA_DIR`.
-3. `%LOCALAPPDATA%\Koharu` nếu thư mục `runtime` tồn tại.
+3. `%LOCALAPPDATA%\Koharu` nếu `runtime-v0.70.2` hoặc `runtime` cũ tồn tại.
 4. `%LOCALAPPDATA%\MangaTranslate\data` trên máy sạch.
 
-Có thể chuyển model sang ổ khác bằng `ENGINE_DATA_DIR` hoặc NTFS junction. Không xóa `runtime\cuda`, `runtime\llama.cpp` hoặc model đang dùng trong pipeline. Thư mục `runtime\.downloads` chỉ chứa gói cài đã tải và có thể xóa sau khi runtime hoạt động ổn định.
+Có thể chuyển model sang ổ khác bằng `ENGINE_DATA_DIR` hoặc NTFS junction. Koharu `0.70.2` dùng kho riêng `runtime-v0.70.2` trong thư mục dữ liệu; bản cũ tiếp tục dùng `runtime`, nên hai engine không ghi đè lẫn nhau. Các archive tạm của CUDA, Torch và native runtime cũng được tạo trong thư mục staging thuộc kho này, không dùng `%TEMP%` trên ổ C. Không xóa runtime hoặc model đang được pipeline sử dụng. Thư mục `runtime\.downloads` của engine cũ chỉ chứa gói cài đã tải và có thể xóa sau khi runtime hoạt động ổn định.
 
 ## Cấu hình nâng cao
 
@@ -177,6 +181,8 @@ Các biến môi trường được hỗ trợ:
 | `MAX_IMAGE_BYTES` | `41943040` | Dung lượng ảnh tối đa, tính theo byte |
 | `ENGINE_DATA_DIR` | tự phát hiện | Thư mục model/runtime |
 | `ENGINE_CPU` | `false` | Ép engine chạy CPU |
+| `ENGINE_IDLE_TIMEOUT_SECONDS` | `900` | Số giây nhàn rỗi trước khi tự giải phóng; `0` để tắt |
+| `ENGINE_PRELOAD` | `false` | Nạp sẵn lõi engine khi service khởi động |
 | `RUST_LOG` | `info` | Mức log của ứng dụng |
 
 CLI hỗ trợ các chế độ `--tray`, `--service`, `--native-messaging`, `--install`, `--uninstall`, `--cpu` và `--data-dir DIR`.
@@ -196,12 +202,14 @@ Kết quả bình thường:
   "status": "ok",
   "mode": "unified",
   "engine": "sleeping",
-  "engineSource": "koharu-0.61.2",
-  "version": "0.8.0"
+  "engineSource": "koharu-0.70.2",
+  "version": "0.12.0"
 }
 ```
 
 Log nằm tại `%LOCALAPPDATA%\MangaTranslate\logs\manga-translate.log`.
+
+Popup **Engine & dung lượng** hiển thị lifecycle, RAM, VRAM, GPU, driver, CUDA runtime, chế độ GPU/CPU fallback, đường dẫn dữ liệu và sức khỏe runtime active. Policy lifecycle được lưu tại `%LOCALAPPDATA%\MangaTranslate\lifecycle.json`. Trình quản lý kho phân loại `runtime-v0.70.2` đang dùng, gói cài dở, runtime/model cũ và cache ứng dụng cũ. Những nhóm legacy cần xác nhận trước khi xóa; thư mục `projects`, cấu hình và runtime active không thuộc bất kỳ mục cleanup nào. Cleanup legacy cũng bị từ chối nếu Koharu desktop còn chạy. Các thao tác unload/restart và dọn dữ liệu bị từ chối khi engine đang xử lý hoặc nạp model.
 
 ## Xử lý sự cố
 
@@ -213,7 +221,7 @@ Log nằm tại `%LOCALAPPDATA%\MangaTranslate\logs\manga-translate.log`.
 
 ### `CUDA_ERROR_UNSUPPORTED_PTX_VERSION`
 
-CUDA Toolkit dùng để build/runtime đang mới hơn khả năng của driver NVIDIA. Cập nhật driver để hỗ trợ toolkit hiện tại hoặc build lại với CUDA Toolkit tương thích. Kiểm tra mức CUDA driver hỗ trợ bằng:
+CUDA runtime mà Koharu tải đang mới hơn khả năng của driver NVIDIA. Cập nhật driver để hỗ trợ runtime hiện tại hoặc dùng CPU fallback. Kiểm tra mức CUDA driver hỗ trợ bằng:
 
 ```powershell
 nvidia-smi

@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod config;
+mod diagnostics;
 mod engine;
 mod error;
 mod http;
@@ -83,11 +84,13 @@ fn run_service(state: Arc<AppState>) -> Result<()> {
     runtime.block_on(async move {
         let listener = tokio::net::TcpListener::bind(state.config.socket_addr()).await?;
         tracing::info!(url = %format!("http://{}", state.config.socket_addr()), "service started");
+        let lifecycle = service::spawn_lifecycle_monitor(state.engine.clone());
         axum::serve(listener, http::router(state))
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;
             })
             .await?;
+        lifecycle.abort();
         Ok(())
     })
 }

@@ -3,16 +3,19 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::{DefaultBodyLimit, Json, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use uuid::Uuid;
 
+use crate::diagnostics::{
+    CudaDiagnostics, StorageDiagnostics, cleanup_storage as clean_storage, legacy_koharu_running,
+};
 use crate::engine::{KOHARU_VERSION, TranslationSettings};
 use crate::error::AppError;
 use crate::models::ModelRequest;
@@ -49,6 +52,13 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
+        .route("/api/v1/diagnostics", get(diagnostics))
+        .route("/api/v1/engine/status", get(engine_status))
+        .route("/api/v1/engine/unload", post(unload_engine))
+        .route("/api/v1/engine/preload", post(preload_engine))
+        .route("/api/v1/engine/restart", post(restart_engine))
+        .route("/api/v1/engine/policy", post(update_engine_policy))
+        .route("/api/v1/storage/cleanup", post(cleanup_storage))
         .route("/api/v1/models", post(models))
         .route("/api/v1/translate-image", post(translate_image))
         .fallback(not_found)
@@ -69,11 +79,7 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     axum::Json(Health {
         status: "ok",
         mode: "unified",
-        engine: if state.engine.is_ready() {
-            "ready"
-        } else {
-            "sleeping"
-        },
+        engine: state.engine.state(),
         engine_source: format!("koharu-{KOHARU_VERSION}"),
         version: env!("CARGO_PKG_VERSION"),
     })
@@ -82,12 +88,156 @@ async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 async fn ready(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     axum::Json(Ready {
         status: "ready",
-        engine: if state.engine.is_ready() {
-            "ready"
-        } else {
-            "sleeping"
-        },
+        engine: state.engine.state(),
     })
+}
+
+async fn diagnostics(State(state): State<Arc<AppState>>) -> Response {
+    let data_dir = state.config.data_dir.clone();
+    let cpu = state.config.cpu;
+    let (storage, cuda) = tokio::join!(
+        tokio::task::spawn_blocking(move || StorageDiagnostics::scan(&data_dir)),
+        tokio::task::spawn_blocking(move || CudaDiagnostics::collect(cpu)),
+    );
+    let storage = match storage {
+        Ok(Ok(storage)) => storage,
+        Ok(Err(error)) => {
+            return AppError::internal(format!("Storage scan failed: {error:#}"))
+                .response(Uuid::new_v4());
+        }
+        Err(error) => {
+            return AppError::internal(format!("Storage scan task failed: {error}"))
+                .response(Uuid::new_v4());
+        }
+    };
+    let cuda = match cuda {
+        Ok(cuda) => cuda,
+        Err(error) => {
+            return AppError::internal(format!("CUDA diagnostics failed: {error}"))
+                .response(Uuid::new_v4());
+        }
+    };
+    (
+        StatusCode::OK,
+        axum::Json(DiagnosticsResponse {
+            engine: state.engine.diagnostics(),
+            cuda,
+            storage,
+        }),
+    )
+        .into_response()
+}
+
+async fn engine_status(State(state): State<Arc<AppState>>) -> Response {
+    lifecycle_response(&state, "status")
+}
+
+async fn unload_engine(State(state): State<Arc<AppState>>) -> Response {
+    let request_id = Uuid::new_v4();
+    match state.engine.request_unload("manual") {
+        Ok(unloaded) => lifecycle_response(&state, if unloaded { "unloaded" } else { "sleeping" }),
+        Err(error) => lifecycle_error(error, request_id),
+    }
+}
+
+async fn preload_engine(State(state): State<Arc<AppState>>) -> Response {
+    let request_id = Uuid::new_v4();
+    match state.engine.preload().await {
+        Ok(loaded) => {
+            lifecycle_response(&state, if loaded { "preloaded" } else { "already-ready" })
+        }
+        Err(error) => lifecycle_error(error, request_id),
+    }
+}
+
+async fn restart_engine(State(state): State<Arc<AppState>>) -> Response {
+    let request_id = Uuid::new_v4();
+    match state.engine.restart().await {
+        Ok(()) => lifecycle_response(&state, "restarted"),
+        Err(error) => lifecycle_error(error, request_id),
+    }
+}
+
+async fn update_engine_policy(
+    State(state): State<Arc<AppState>>,
+    Json(policy): Json<crate::config::LifecyclePolicy>,
+) -> Response {
+    let request_id = Uuid::new_v4();
+    match state.engine.update_lifecycle_policy(policy) {
+        Ok(()) => lifecycle_response(&state, "policy-updated"),
+        Err(error) => {
+            AppError::validation(format!("Invalid engine policy: {error:#}")).response(request_id)
+        }
+    }
+}
+
+fn lifecycle_response(state: &AppState, action: &'static str) -> Response {
+    (
+        StatusCode::OK,
+        axum::Json(LifecycleResponse {
+            action,
+            engine: state.engine.diagnostics(),
+        }),
+    )
+        .into_response()
+}
+
+fn lifecycle_error(error: anyhow::Error, request_id: Uuid) -> Response {
+    if error.to_string().contains("engine is busy") {
+        AppError::conflict("Engine đang xử lý ảnh; hãy thử lại sau khi hàng đợi hoàn tất")
+            .response(request_id)
+    } else {
+        AppError::engine(format!("Engine lifecycle operation failed: {error:#}"))
+            .response(request_id)
+    }
+}
+
+async fn cleanup_storage(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<CleanupRequest>,
+) -> Response {
+    let request_id = Uuid::new_v4();
+    if matches!(state.engine.state(), "busy" | "loading") {
+        return AppError::conflict(
+            "Engine đang xử lý ảnh; hãy dọn cache sau khi hàng đợi hoàn tất",
+        )
+        .response(request_id);
+    }
+    if ![
+        "downloads",
+        "staging",
+        "legacy-runtime",
+        "legacy-models",
+        "legacy-cache",
+    ]
+    .contains(&request.target.as_str())
+    {
+        return AppError::validation("Nhóm dữ liệu cần dọn không hợp lệ").response(request_id);
+    }
+    if request.target.starts_with("legacy-") && legacy_koharu_running() {
+        return AppError::conflict(
+            "Koharu desktop đang chạy; hãy thoát Koharu trước khi dọn dữ liệu cũ",
+        )
+        .response(request_id);
+    }
+    let data_dir = state.config.data_dir.clone();
+    let target = request.target.clone();
+    match tokio::task::spawn_blocking(move || clean_storage(&data_dir, &target)).await {
+        Ok(Ok(freed_bytes)) => (
+            StatusCode::OK,
+            axum::Json(CleanupResponse {
+                target: request.target,
+                freed_bytes,
+            }),
+        )
+            .into_response(),
+        Ok(Err(error)) => {
+            AppError::internal(format!("Không dọn được dữ liệu: {error:#}")).response(request_id)
+        }
+        Err(error) => {
+            AppError::internal(format!("Tác vụ dọn cache thất bại: {error}")).response(request_id)
+        }
+    }
 }
 
 async fn models(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
@@ -125,7 +275,7 @@ async fn translate_image(
             let mut response = bytes.into_response();
             response
                 .headers_mut()
-                .insert(CONTENT_TYPE, HeaderValue::from_static("image/webp"));
+                .insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
             response
                 .headers_mut()
                 .insert("x-mt-cache", HeaderValue::from_static("miss"));
@@ -283,6 +433,33 @@ struct Ready {
 #[derive(Serialize)]
 struct ModelsResponse {
     models: Vec<crate::models::ModelInfo>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticsResponse {
+    engine: crate::engine::EngineDiagnostics,
+    cuda: CudaDiagnostics,
+    storage: StorageDiagnostics,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LifecycleResponse {
+    action: &'static str,
+    engine: crate::engine::EngineDiagnostics,
+}
+
+#[derive(Deserialize)]
+struct CleanupRequest {
+    target: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CleanupResponse {
+    target: String,
+    freed_bytes: u64,
 }
 
 #[cfg(test)]

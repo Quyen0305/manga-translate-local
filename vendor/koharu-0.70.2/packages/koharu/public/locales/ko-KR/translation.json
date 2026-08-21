@@ -1,0 +1,531 @@
+{
+  "about": {
+    "author": "작성자",
+    "description": "만화 번역 도구",
+    "unavailable": "사용할 수 없음",
+    "version": "버전"
+  },
+  "activity": {
+    "dismiss": "닫기",
+    "downloadFailed": "다운로드에 실패했습니다.",
+    "downloadingFiles": "{{count}}개 파일 다운로드 중",
+    "downloadingFiles_one": "{{count}}개 파일 다운로드 중",
+    "downloadingFiles_other": "{{count}}개 파일 다운로드 중",
+    "modelDownload": "모델 다운로드",
+    "processing": "처리 중",
+    "processingFailed": "처리에 실패했습니다.",
+    "stop": "중지",
+    "title": "활동"
+  },
+  "agent": {
+    "account": "ChatGPT 계정",
+    "applying": "프로젝트 변경 사항 적용 중…",
+    "automatic": "자동",
+    "cancel": "취소",
+    "cancelled": "취소되었습니다.",
+    "deviceCode": "기기 코드",
+    "deviceCodeHint": "브라우저가 열렸습니다. 이 코드를 입력해 Koharu를 승인하세요.",
+    "emptyDescription": "에이전트에게 이 프로젝트의 검사, 번역, 편집 또는 처리를 요청하세요. 페이지 이미지는 필요할 때만 확인합니다.",
+    "emptyTitle": "Koharu에게 무엇을 시킬까요?",
+    "failed": "에이전트 요청에 실패했습니다.",
+    "loading": "Codex 불러오는 중…",
+    "message": "Koharu 에이전트에게 메시지 보내기",
+    "model": "Codex 모델",
+    "placeholder": "Koharu에게 이 프로젝트 작업 요청…",
+    "properties": "속성",
+    "reasoning": "추론",
+    "reasoningLevels": {
+      "high": "높음",
+      "low": "낮음",
+      "max": "최대",
+      "medium": "중간",
+      "ultra": "울트라",
+      "xhigh": "매우 높음"
+    },
+    "send": "보내기",
+    "signIn": "Codex로 로그인",
+    "signInDescription": "ChatGPT 구독으로 로그인하세요. Koharu는 기기 코드 인증을 사용하며 API 키를 요구하지 않습니다.",
+    "signInTitle": "Codex 연결",
+    "signOut": "로그아웃",
+    "signingIn": "로그인 대기 중…",
+    "thinking": "생각 중…",
+    "title": "에이전트",
+    "working": "작업 중…"
+  },
+  "canvas": {
+    "empty": "시작할 페이지를 선택하세요.",
+    "fit": "창에 맞춤",
+    "surface": "Koharu 캔버스",
+    "unavailable": "WebGPU 캔버스를 사용할 수 없습니다"
+  },
+  "colorPicker": {
+    "brushColor": "브러시 색상",
+    "hexCode": "16진수 색상 코드",
+    "sampleCanvas": "캔버스에서 색상 선택",
+    "transparent": "투명"
+  },
+  "common": {
+    "back": "뒤로",
+    "cancel": "취소",
+    "clearSearch": "검색 지우기",
+    "loading": "불러오는 중…",
+    "reset": "초기화"
+  },
+  "errors": {
+    "fatalTitle": "Koharu를 계속 실행할 수 없습니다",
+    "tryAgain": "다시 시도"
+  },
+  "fontPicker": {
+    "activeFilterCount": "활성 필터 {{count}}개",
+    "activeFilterCount_one": "활성 필터 {{count}}개",
+    "activeFilterCount_other": "활성 필터 {{count}}개",
+    "allPurposes": "모든 용도",
+    "allScripts": "모든 문자 체계",
+    "allSources": "모든 출처",
+    "allStyles": "모든 스타일",
+    "choose": "글꼴 선택",
+    "clearFilters": "필터 지우기",
+    "filter": "글꼴 필터링",
+    "filterActiveLabel": "글꼴 필터링, {{count}}개 활성",
+    "fontCount": "글꼴 {{count}}개",
+    "fontCount_one": "글꼴 {{count}}개",
+    "fontCount_other": "글꼴 {{count}}개",
+    "fontLabel": "{{family}}, {{source}}",
+    "fonts": "글꼴",
+    "noResults": "검색과 일치하는 글꼴이 없습니다",
+    "purpose": "용도",
+    "script": "문자 체계",
+    "scripts": {
+      "arab": "아랍 문자",
+      "beng": "벵골 문자",
+      "cyrl": "키릴 문자",
+      "deva": "데바나가리 문자",
+      "gujr": "구자라트 문자",
+      "guru": "구르무키 문자",
+      "hang": "한글",
+      "hani": "한자",
+      "hebr": "히브리 문자",
+      "hira": "히라가나",
+      "kana": "가타카나",
+      "knda": "칸나다 문자",
+      "latn": "라틴 문자",
+      "mlym": "말라얄람 문자",
+      "taml": "타밀 문자",
+      "telu": "텔루구 문자",
+      "thai": "타이 문자"
+    },
+    "search": "글꼴 검색",
+    "source": "출처",
+    "sources": {
+      "bundled": "번들",
+      "system": "시스템"
+    },
+    "style": "스타일"
+  },
+  "inference": {
+    "currentPage": "현재 페이지",
+    "currentPageDescription": "캔버스의 페이지만 처리합니다.",
+    "entireProject": "전체 프로젝트",
+    "entireProjectDescription": "이 프로젝트의 모든 페이지를 처리합니다.",
+    "model": "모델",
+    "noModel": "모델 없음",
+    "notSet": "설정되지 않음",
+    "output": "출력",
+    "pipelineStages": "파이프라인 단계",
+    "providerDefault": "제공자 기본값",
+    "run": "실행",
+    "runProcessing": "처리 실행",
+    "scope": "범위",
+    "scopeShort": {
+      "page": "페이지",
+      "project": "프로젝트",
+      "selected-pages": "선택 항목"
+    },
+    "selectPagesFirst": "먼저 페이지를 선택하세요",
+    "selectedCount": "선택한 페이지 {{count}}개",
+    "selectedCount_one": "선택한 페이지 {{count}}개",
+    "selectedCount_other": "선택한 페이지 {{count}}개",
+    "selectedPages": "선택한 페이지",
+    "selector": "처리 설정",
+    "shortcuts": "처리 옵션",
+    "stageCount": "{{count}}단계",
+    "stageCount_one": "{{count}}단계",
+    "stageCount_other": "{{count}}단계",
+    "stages": "단계",
+    "stop": "중지",
+    "stopProcessing": "처리 중지"
+  },
+  "inspector": {
+    "alignBottom": "아래 정렬",
+    "alignCenter": "가운데 정렬",
+    "alignLeft": "왼쪽 정렬",
+    "alignMiddle": "가운데 정렬",
+    "alignRight": "오른쪽 정렬",
+    "alignTop": "위 정렬",
+    "alignment": "정렬",
+    "auto": "자동",
+    "autoFit": "자동 맞춤",
+    "border": "테두리",
+    "borderColor": "테두리 색상",
+    "borderWidth": "테두리 너비",
+    "chooseFontSize": "글꼴 크기 선택",
+    "color": "색상",
+    "customFrame": "사용자 지정 프레임",
+    "decreaseBorderWidth": "테두리 너비 줄이기",
+    "direction": "방향",
+    "font": "글꼴",
+    "fontSize": "글꼴 크기",
+    "fontStyle": "글꼴 스타일",
+    "fontStyles": {
+      "italic": "기울임꼴",
+      "normal": "보통",
+      "oblique": "기울임"
+    },
+    "fontWeight": "글꼴 굵기",
+    "horizontal": "가로쓰기",
+    "increaseBorderWidth": "테두리 너비 늘리기",
+    "opacity": "불투명도",
+    "placement": "배치",
+    "resetAutoFit": "자동 맞춤으로 초기화",
+    "selectPage": "레이어를 확인할 페이지를 선택하세요.",
+    "size": "크기",
+    "source": "원문",
+    "style": "스타일",
+    "textColor": "텍스트 색상",
+    "textDirection": "텍스트 방향",
+    "translation": "번역",
+    "type": "타이포그래피",
+    "unplaced": "배치되지 않음",
+    "vertical": "세로쓰기",
+    "weight": "굵기",
+    "width": "너비"
+  },
+  "languages": {
+    "en-US": "English",
+    "es-ES": "Español",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "pt-BR": "Português brasileiro",
+    "ru-RU": "Русский",
+    "tr-TR": "Türkçe",
+    "zh-CN": "简体中文",
+    "zh-TW": "繁體中文"
+  },
+  "layers": {
+    "delete": "{{name}} 삭제",
+    "edit": "{{name}} 편집",
+    "empty": "이 페이지에는 레이어가 없습니다.",
+    "hide": "{{name}} 숨기기",
+    "imageName": "이미지 {{index}}",
+    "kinds": {
+      "cleanup": "정리",
+      "dialogue": "대사",
+      "freeText": "자유 텍스트",
+      "group": "그룹",
+      "image": "이미지",
+      "paint": "페인트",
+      "text": "텍스트",
+      "textGroup": "텍스트 그룹"
+    },
+    "locked": "잠김",
+    "lockedLabel": "{{name}}이(가) 잠겨 있습니다",
+    "moveDown": "{{name}} 아래로 이동",
+    "moveUp": "{{name}} 위로 이동",
+    "opacityLabel": "{{name}} 불투명도",
+    "originalArtwork": "원본 아트워크",
+    "show": "{{name}} 표시",
+    "sourceLabel": "{{name}} 원문",
+    "textName": "텍스트 {{index}}",
+    "title": "레이어",
+    "translationLabel": "{{name}} 번역"
+  },
+  "menu": {
+    "about": "정보",
+    "closeProject": "프로젝트 닫기",
+    "delete": "선택 항목 삭제",
+    "discord": "Discord",
+    "edit": "편집",
+    "exportPng": "PNG 내보내기…",
+    "exportPsd": "PSD 내보내기…",
+    "file": "파일",
+    "fit": "창에 맞춤",
+    "github": "GitHub",
+    "help": "도움말",
+    "importPages": "페이지 가져오기…",
+    "process": "처리",
+    "processLayers": "선택한 레이어 처리",
+    "processPages": "선택한 페이지 처리",
+    "processProject": "프로젝트 처리",
+    "redo": "다시 실행",
+    "runPhase": "{{phase}} 실행",
+    "selectAllLayers": "모든 레이어 선택",
+    "settings": "설정",
+    "undo": "실행 취소",
+    "view": "보기"
+  },
+  "model": {
+    "baseUrl": "기본 URL",
+    "default": "기본값",
+    "instructions": "번역 지침",
+    "targetLanguage": "대상 언어"
+  },
+  "modelPicker": {
+    "empty": "사용 가능한 모델이 없습니다.",
+    "loading": "모델 불러오는 중…",
+    "noResults": "검색과 일치하는 모델이 없습니다.",
+    "search": "모델 검색",
+    "title": "모델 선택",
+    "useModel": "{{provider}}의 {{model}} 사용"
+  },
+  "navigator": {
+    "actionsFor": "{{page}} 작업",
+    "delete": "삭제",
+    "emptyDescription": "이미지 파일이나 폴더를 가져와 페이지를 추가하세요.",
+    "emptyTitle": "아직 페이지가 없습니다",
+    "filter": "페이지 필터링",
+    "importAction": "가져오기",
+    "importFiles": "파일…",
+    "importFolder": "폴더…",
+    "importing": "페이지 가져오는 중…",
+    "importingAction": "가져오는 중…",
+    "layerCount": "레이어 {{count}}개",
+    "layerCount_one": "레이어 {{count}}개",
+    "layerCount_other": "레이어 {{count}}개",
+    "noImage": "이미지 없음",
+    "noResults": "필터와 일치하는 페이지가 없습니다.",
+    "pageName": "페이지 이름",
+    "pages": "페이지",
+    "rename": "이름 바꾸기",
+    "renameDescription": "이 페이지의 새 이름을 정하세요.",
+    "renameTitle": "페이지 이름 바꾸기"
+  },
+  "outputPicker": {
+    "instructions": "번역 지침",
+    "instructionsPlaceholder": "말투, 이름, 서식에 관한 선택적 지침입니다.",
+    "targetLanguage": "대상 언어",
+    "title": "번역 출력"
+  },
+  "phase": {
+    "detection": "감지",
+    "inpainting": "인페인팅",
+    "ocr": "OCR",
+    "translation": "번역"
+  },
+  "phaseDescription": {
+    "detection": "페이지의 텍스트를 찾습니다.",
+    "inpainting": "텍스트를 지운 뒤 그림을 복원합니다.",
+    "ocr": "각 영역 안의 텍스트를 읽습니다.",
+    "translation": "원문을 대상 언어로 번역합니다."
+  },
+  "providerDescriptions": {
+    "atlas-cloud": "Atlas에서 호스팅되는 언어 모델입니다.",
+    "caiyun": "Caiyun 번역 API입니다.",
+    "claude": "Anthropic Claude 모델입니다.",
+    "deepl": "DeepL 번역 API입니다.",
+    "deepseek": "DeepSeek 언어 모델입니다.",
+    "gemini": "Google Gemini 모델입니다.",
+    "google-cloud-translation": "Google Cloud Translation API입니다.",
+    "lm-studio": "LM Studio에서 제공되는 모델입니다.",
+    "local": "이 기기에서 실행되는 모델입니다.",
+    "openai": "OpenAI 언어 모델입니다.",
+    "openai-compatible": "OpenAI 호환 API를 제공하는 모든 서버입니다.",
+    "openrouter": "OpenRouter를 통해 라우팅되는 모델입니다."
+  },
+  "resources": {
+    "cpu": "CPU",
+    "processUtilization": "프로세스 사용률",
+    "ram": "RAM",
+    "summary": "RAM {{ram}}%, CPU {{cpu}}%",
+    "title": "시스템 리소스",
+    "tooltip": "RAM {{ramUsed}} / {{ramTotal}} · CPU {{cpu}}%",
+    "usedOfTotal": "{{total}} 중 {{used}} 사용",
+    "vramUnavailable": "사용할 수 없음",
+    "vramValue": "VRAM {{value}}"
+  },
+  "settings": {
+    "appearance": {
+      "description": "아트워크 렌더링에는 영향을 주지 않고 작업 공간의 모습을 조정합니다.",
+      "interface": "인터페이스",
+      "language": "언어",
+      "theme": "테마",
+      "themeDescription": "시스템은 운영 체제 설정을 따릅니다.",
+      "themes": {
+        "dark": "다크",
+        "light": "라이트",
+        "system": "시스템"
+      },
+      "title": "모양"
+    },
+    "backToEditor": "편집기로 돌아가기",
+    "generation": {
+      "description": "언어 모델이 번역문을 생성하는 방식을 조정합니다.",
+      "enableThinking": "사고 활성화",
+      "frequencyPenalty": "빈도 페널티",
+      "maxTokens": "최대 토큰",
+      "minP": "최소 P",
+      "presencePenalty": "존재 페널티",
+      "repeatPenalty": "반복 페널티",
+      "sampling": "샘플링",
+      "temperature": "온도",
+      "thinking": "사고",
+      "thinkingDescription": "추론 지원 모델이 사고 모드를 사용하도록 합니다.",
+      "title": "생성",
+      "topK": "상위 K개",
+      "topP": "Top P",
+      "vision": "비전 입력"
+    },
+    "loading": "환경 설정 불러오는 중…",
+    "pipeline": {
+      "description": "각 페이지 처리에 사용할 모델과 옵션을 선택합니다.",
+      "modelLabel": "{{stage}} 모델",
+      "options": {
+        "bubbleThreshold": "말풍선 임곗값",
+        "negativePrompt": "네거티브 프롬프트",
+        "panelThreshold": "패널 임곗값",
+        "prompt": "프롬프트",
+        "textThreshold": "텍스트 임곗값"
+      },
+      "processing": "처리 중",
+      "stages": {
+        "detection": {
+          "description": "텍스트, 말풍선, 패널을 찾습니다.",
+          "title": "감지"
+        },
+        "inpainting": {
+          "description": "제거한 텍스트 아래의 아트워크를 복원합니다.",
+          "title": "인페인팅"
+        },
+        "ocr": {
+          "description": "감지된 영역 안의 원문을 읽습니다.",
+          "title": "OCR"
+        }
+      },
+      "title": "파이프라인"
+    },
+    "providers": {
+      "clearCredential": "{{provider}} 자격 증명 지우기",
+      "configured": "설정됨",
+      "connections": "연결",
+      "connectionsDescription": "자격 증명은 이 기기에 안전하게 저장됩니다.",
+      "credentialLabel": "{{provider}} 자격 증명",
+      "description": "번역 및 언어 모델 제공자를 연결합니다.",
+      "hideCredential": "{{provider}} 자격 증명 숨기기",
+      "notConfigured": "설정 안 됨",
+      "revealCredential": "{{provider}} 자격 증명 표시",
+      "title": "제공자"
+    },
+    "shortcuts": {
+      "description": "텍스트 필드에 포커스가 없을 때 단일 키 단축키를 사용할 수 있습니다.",
+      "inputLabel": "{{action}} 단축키",
+      "title": "단축키",
+      "tools": "도구"
+    },
+    "tabs": {
+      "appearance": "모양",
+      "pipeline": "파이프라인",
+      "providers": "제공자",
+      "shortcuts": "단축키",
+      "translation": "번역",
+      "typesetting": "조판"
+    },
+    "title": "설정",
+    "translation": {
+      "description": "설정된 제공자의 모델을 선택하고 공통 번역 및 생성 옵션을 적용합니다.",
+      "instructionsDescription": "이름, 어조, 용어 또는 서식 지침입니다.",
+      "instructionsLabel": "번역 지침",
+      "instructionsPlaceholder": "프로젝트 전체에 적용할 선택적 지침",
+      "model": "모델",
+      "modelDescription": "제공자 레이블은 각 모델의 실행 위치를 나타내며 연결은 별도로 설정합니다.",
+      "modelQuantization": "모델 양자화",
+      "output": "출력",
+      "quantization": "양자화",
+      "quantizationDescription": "작은 형식은 메모리를 덜 사용하지만 일반적으로 품질이 낮아질 수 있습니다.",
+      "selectQuantization": "양자화 선택",
+      "title": "번역",
+      "translationModel": "번역 모델"
+    },
+    "typesetting": {
+      "addFamily": "글꼴 패밀리 추가",
+      "defaultFamilies": "기본 글꼴 패밀리",
+      "description": "텍스트 레이어에 글꼴 패밀리가 지정되지 않았을 때 사용할 순서 있는 글꼴 스택을 설정합니다.",
+      "empty": "기본 패밀리가 없습니다. Koharu가 시스템 대체 글꼴을 사용합니다.",
+      "familyLabel": "기본 글꼴 패밀리 {{index}}",
+      "fontFallback": "대체 글꼴",
+      "fontFallbackDescription": "Koharu는 텍스트를 지원하는 첫 번째 사용 가능한 패밀리를 사용합니다.",
+      "loadError": "글꼴을 불러오지 못했습니다. 기존 패밀리는 삭제할 수 있습니다.",
+      "loadingFonts": "글꼴 불러오는 중…",
+      "removeFamily": "{{family}} 삭제",
+      "title": "조판"
+    }
+  },
+  "start": {
+    "create": "만들기",
+    "deleteAction": "프로젝트 삭제",
+    "deleteDescription": "“{{name}}” 및 모든 페이지를 영구적으로 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+    "deleteLabel": "{{name}} 삭제",
+    "deleteTitle": "프로젝트를 삭제할까요?",
+    "deleting": "삭제 중…",
+    "description": "작업 공간을 열거나 새 번역을 시작하세요.",
+    "emptyDescription": "첫 프로젝트를 만들고 페이지 가져오기를 시작하세요.",
+    "emptyTitle": "아직 프로젝트가 없습니다",
+    "loadingProjects": "프로젝트 불러오는 중…",
+    "newDescription": "페이지, 번역 및 내보내기를 위한 새 작업 공간을 만드세요.",
+    "newProject": "새 프로젝트",
+    "projectKind": "Koharu 프로젝트",
+    "projectList": "프로젝트",
+    "projectName": "프로젝트 이름",
+    "projectNamePlaceholder": "새 프로젝트",
+    "storageHint": "프로젝트는 문서 폴더에 로컬로 저장됩니다.",
+    "title": "프로젝트",
+    "yourProjects": "내 프로젝트"
+  },
+  "startup": {
+    "description": "로컬 AI 런타임을 불러오고 작업 공간을 준비하고 있습니다. 처음 실행할 때는 잠시 걸릴 수 있습니다.",
+    "opening": "Koharu 여는 중…",
+    "status": "로컬 런타임 초기화 중",
+    "title": "Koharu 준비 중"
+  },
+  "status": {
+    "zoom": "확대/축소"
+  },
+  "tools": {
+    "brushSize": "브러시 크기",
+    "brushSizeInput": "브러시 크기",
+    "brushSizePixels": "브러시 크기: {{size}}픽셀",
+    "brushSizeShort": "{{size}} px",
+    "color_picker": "색상 선택기",
+    "decreaseBrushSize": "브러시 크기 줄이기",
+    "draw": "그리기",
+    "eraser": "지우개",
+    "increaseBrushSize": "브러시 크기 늘리기",
+    "pan": "이동",
+    "remove": "제거",
+    "select": "선택",
+    "text": "텍스트"
+  },
+  "updater": {
+    "available": {
+      "description": "코하루 <strong>{{version}}</strong>을(를) 설치할 수 있습니다",
+      "title": "업데이트 사용 가능"
+    },
+    "close": "닫기",
+    "downloading": {
+      "subtitle": "코하루 {{version}}",
+      "title": "업데이트 다운로드 중…"
+    },
+    "error": {
+      "description": "업데이트 중 문제가 발생했습니다",
+      "title": "업데이트 실패"
+    },
+    "later": "나중에",
+    "noNotes": "릴리스 노트가 제공되지 않았습니다.",
+    "retry": "다시 시도",
+    "update": "업데이트"
+  },
+  "window": {
+    "close": "닫기",
+    "maximize": "최대화",
+    "minimize": "최소화",
+    "restore": "복원"
+  }
+}

@@ -75,6 +75,56 @@
       </details>
     </main>
 
+    <details class="system-panel">
+      <summary>
+        <span>Engine &amp; dung lượng</span>
+        <span id="system-summary">Đang kiểm tra</span>
+      </summary>
+      <div class="system-content" aria-live="polite">
+        <dl class="system-grid">
+          <dt>Trạng thái</dt><dd id="lifecycle-state">-</dd>
+          <dt>Chế độ</dt><dd id="compute-mode">-</dd>
+          <dt>RAM tiến trình</dt><dd id="process-memory">-</dd>
+          <dt>VRAM tiến trình</dt><dd id="gpu-memory">-</dd>
+          <dt>Tự ngủ</dt><dd id="idle-remaining">-</dd>
+          <dt>CUDA</dt><dd id="cuda-status">-</dd>
+          <dt>Runtime 0.70.2</dt><dd id="runtime-health" data-state="missing">-</dd>
+          <dt>Dung lượng active</dt><dd id="active-runtime-size">-</dd>
+          <dt>Dữ liệu Koharu cũ</dt><dd id="legacy-size">-</dd>
+          <dt>Có thể thu hồi</dt><dd id="reclaimable-size">-</dd>
+          <dt>Dữ liệu khác</dt><dd id="other-size">-</dd>
+        </dl>
+        <p id="cuda-message" class="system-message"></p>
+        <p id="runtime-message" class="system-message"></p>
+        <p id="data-directory" class="data-directory"></p>
+        <div class="lifecycle-policy">
+          <label>Tự giải phóng
+            <select id="idle-timeout">
+              <option value="300">Sau 5 phút</option>
+              <option value="600">Sau 10 phút</option>
+              <option value="900">Sau 15 phút</option>
+              <option value="1800">Sau 30 phút</option>
+              <option value="0">Không tự giải phóng</option>
+            </select>
+          </label>
+          <label class="toggle"><input id="preload-engine" type="checkbox"><span></span>Nạp lõi khi khởi động</label>
+        </div>
+        <div class="engine-actions">
+          <button id="load-engine" class="secondary" type="button">Nạp engine</button>
+          <button id="unload-engine" class="secondary" type="button">Giải phóng</button>
+          <button id="restart-engine" class="secondary" type="button">Khởi động lại</button>
+        </div>
+        <div class="storage-manager">
+          <strong>Quản lý kho engine</strong>
+          <div id="cleanup-list" class="cleanup-list"></div>
+          <p id="cleanup-empty" class="system-message">Không có dữ liệu có thể dọn.</p>
+        </div>
+        <div class="system-actions">
+          <button id="refresh-diagnostics" class="icon-button" type="button" title="Làm mới thông tin engine" aria-label="Làm mới thông tin engine">↻</button>
+        </div>
+      </div>
+    </details>
+
     <section class="error-panel" aria-labelledby="error-title">
       <div class="error-heading">
         <div>

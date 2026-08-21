@@ -16,6 +16,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::config::AppConfig;
+use crate::diagnostics::resolve_path;
 use crate::native;
 use crate::service::ServiceController;
 
@@ -51,8 +52,17 @@ fn run_loop(
     let menu = Menu::new();
     let service_status = MenuItem::new("Service: starting", false, None);
     let engine_status = MenuItem::new("Engine: sleeping", false, None);
+    let resource_status = MenuItem::new("RAM: checking", false, None);
     let toggle_service = MenuItem::new("Stop Service", true, None);
+    let unload_engine = MenuItem::new("Unload Engine", false, None);
     let restart_engine = MenuItem::new("Restart Engine", true, None);
+    let preload_engine = CheckMenuItem::new(
+        "Preload Engine at Startup",
+        true,
+        controller.lifecycle_policy().preload_on_start,
+        None,
+    );
+    let open_data = MenuItem::new("Open Data Folder", true, None);
     let open_logs = MenuItem::new("Open Logs", true, None);
     let startup = CheckMenuItem::new("Start with Windows", true, native::startup_enabled(), None);
     let install = MenuItem::new("Install Chrome Integration", true, None);
@@ -60,9 +70,13 @@ fn run_loop(
 
     menu.append(&service_status)?;
     menu.append(&engine_status)?;
+    menu.append(&resource_status)?;
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&toggle_service)?;
+    menu.append(&unload_engine)?;
     menu.append(&restart_engine)?;
+    menu.append(&preload_engine)?;
+    menu.append(&open_data)?;
     menu.append(&open_logs)?;
     menu.append(&startup)?;
     menu.append(&install)?;
@@ -106,6 +120,20 @@ fn run_loop(
                 }
             } else if event.id == *restart_engine.id() {
                 controller.restart_engine();
+            } else if event.id == *unload_engine.id() {
+                if let Err(error) = controller.unload_engine() {
+                    tracing::error!(%error, "could not unload engine");
+                }
+            } else if event.id == *preload_engine.id() {
+                let mut policy = controller.lifecycle_policy();
+                policy.preload_on_start = !policy.preload_on_start;
+                if let Err(error) = controller.update_lifecycle_policy(policy) {
+                    tracing::error!(%error, "could not update engine preload policy");
+                }
+            } else if event.id == *open_data.id() {
+                let data = resolve_path(&config.data_dir);
+                let _ = std::fs::create_dir_all(&data);
+                let _ = std::process::Command::new("explorer.exe").arg(data).spawn();
             } else if event.id == *open_logs.id() {
                 let logs = config.app_dir.join("logs");
                 let _ = std::fs::create_dir_all(&logs);
@@ -126,23 +154,35 @@ fn run_loop(
 
         if last_refresh.elapsed() >= Duration::from_millis(500) {
             let running = controller.is_running();
-            let engine_ready = controller.engine_ready();
+            let diagnostics = controller.engine_diagnostics();
+            let engine_ready = diagnostics.loaded;
             service_status.set_text(if running {
                 "Service: running"
             } else {
                 "Service: stopped"
             });
-            engine_status.set_text(if engine_ready {
-                "Engine: ready"
-            } else {
-                "Engine: sleeping"
+            engine_status.set_text(match diagnostics.state {
+                "busy" => "Engine: busy",
+                "loading" => "Engine: loading",
+                "ready" => "Engine: ready",
+                _ => "Engine: sleeping",
             });
+            let ram = format_bytes(diagnostics.resources.process_memory_bytes);
+            let resource_text = diagnostics
+                .resources
+                .gpu_memory_used_bytes
+                .map(|vram| format!("RAM: {ram} | VRAM: {}", format_bytes(vram)))
+                .unwrap_or_else(|| format!("RAM: {ram}"));
+            resource_status.set_text(&resource_text);
             toggle_service.set_text(if running {
                 "Stop Service"
             } else {
                 "Start Service"
             });
-            restart_engine.set_enabled(engine_ready);
+            unload_engine
+                .set_enabled(running && engine_ready && !diagnostics.busy && !diagnostics.loading);
+            restart_engine.set_enabled(running && !diagnostics.busy && !diagnostics.loading);
+            preload_engine.set_checked(controller.lifecycle_policy().preload_on_start);
             startup.set_checked(native::startup_enabled());
             let _ = tray.set_tooltip(Some(if running {
                 if engine_ready {
@@ -184,4 +224,14 @@ fn app_icon() -> Result<Icon> {
         }
     }
     Icon::from_rgba(rgba, SIZE, SIZE).context("create tray icon")
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const MIB: f64 = 1024.0 * 1024.0;
+    const GIB: f64 = 1024.0 * MIB;
+    if bytes as f64 >= GIB {
+        format!("{:.1} GB", bytes as f64 / GIB)
+    } else {
+        format!("{:.0} MB", bytes as f64 / MIB)
+    }
 }

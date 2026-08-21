@@ -1,0 +1,531 @@
+{
+  "about": {
+    "author": "Автор",
+    "description": "Инструменты перевода манги",
+    "unavailable": "Недоступно",
+    "version": "Версия"
+  },
+  "activity": {
+    "dismiss": "Закрыть",
+    "downloadFailed": "Не удалось скачать.",
+    "downloadingFiles": "Скачивание файлов: {{count}}",
+    "downloadingFiles_one": "Скачивание файлов: {{count}}",
+    "downloadingFiles_other": "Скачивание файлов: {{count}}",
+    "modelDownload": "Скачивание модели",
+    "processing": "Обработка",
+    "processingFailed": "Ошибка обработки.",
+    "stop": "Остановить",
+    "title": "Активность"
+  },
+  "agent": {
+    "account": "Учётная запись ChatGPT",
+    "applying": "Применение изменений проекта…",
+    "automatic": "Автоматически",
+    "cancel": "Отмена",
+    "cancelled": "Отменено.",
+    "deviceCode": "Код устройства",
+    "deviceCodeHint": "Браузер открыт. Введите этот код, чтобы авторизовать Koharu.",
+    "emptyDescription": "Попросите агента проверить, перевести, изменить или обработать проект. Он будет просматривать изображения страниц только при необходимости.",
+    "emptyTitle": "Что должен сделать Koharu?",
+    "failed": "Запрос агента завершился ошибкой.",
+    "loading": "Загрузка Codex…",
+    "message": "Сообщение агенту Koharu",
+    "model": "Модель Codex",
+    "placeholder": "Попросите Koharu поработать над проектом…",
+    "properties": "Свойства",
+    "reasoning": "Рассуждение",
+    "reasoningLevels": {
+      "high": "Высокий",
+      "low": "Низкий",
+      "max": "Максимальный",
+      "medium": "Средний",
+      "ultra": "Ультра",
+      "xhigh": "Очень высокий"
+    },
+    "send": "Отправить",
+    "signIn": "Войти через Codex",
+    "signInDescription": "Войдите с подпиской ChatGPT. Koharu использует авторизацию по коду устройства и никогда не запрашивает ключ API.",
+    "signInTitle": "Подключить Codex",
+    "signOut": "Выйти",
+    "signingIn": "Ожидание входа…",
+    "thinking": "Размышление…",
+    "title": "Агент",
+    "working": "Работа…"
+  },
+  "canvas": {
+    "empty": "Выберите страницу, чтобы начать.",
+    "fit": "Вписать в окно",
+    "surface": "Холст Koharu",
+    "unavailable": "Холст WebGPU недоступен"
+  },
+  "colorPicker": {
+    "brushColor": "Цвет кисти",
+    "hexCode": "Шестнадцатеричный код цвета",
+    "sampleCanvas": "Выбрать цвет с холста",
+    "transparent": "Прозрачный"
+  },
+  "common": {
+    "back": "Назад",
+    "cancel": "Отмена",
+    "clearSearch": "Очистить поиск",
+    "loading": "Загрузка…",
+    "reset": "Сбросить"
+  },
+  "errors": {
+    "fatalTitle": "Koharu не может продолжить работу",
+    "tryAgain": "Повторить"
+  },
+  "fontPicker": {
+    "activeFilterCount": "Активных фильтров: {{count}}",
+    "activeFilterCount_one": "Активный фильтр: {{count}}",
+    "activeFilterCount_other": "Активных фильтров: {{count}}",
+    "allPurposes": "Все назначения",
+    "allScripts": "Все системы письма",
+    "allSources": "Все источники",
+    "allStyles": "Все стили",
+    "choose": "Выбрать шрифт",
+    "clearFilters": "Очистить фильтры",
+    "filter": "Фильтровать шрифты",
+    "filterActiveLabel": "Фильтровать шрифты, активно: {{count}}",
+    "fontCount": "Шрифтов: {{count}}",
+    "fontCount_one": "Шрифт: {{count}}",
+    "fontCount_other": "Шрифтов: {{count}}",
+    "fontLabel": "{{family}}, {{source}}",
+    "fonts": "Шрифты",
+    "noResults": "Нет шрифтов, соответствующих поиску",
+    "purpose": "Назначение",
+    "script": "Система письма",
+    "scripts": {
+      "arab": "Арабское письмо",
+      "beng": "Бенгальское письмо",
+      "cyrl": "Кириллица",
+      "deva": "Деванагари",
+      "gujr": "Письмо гуджарати",
+      "guru": "Гурмукхи",
+      "hang": "Хангыль",
+      "hani": "Хань",
+      "hebr": "Еврейское письмо",
+      "hira": "Хирагана",
+      "kana": "Катакана",
+      "knda": "Каннада",
+      "latn": "Латиница",
+      "mlym": "Малаялам",
+      "taml": "Тамильское письмо",
+      "telu": "Письмо телугу",
+      "thai": "Тайское письмо"
+    },
+    "search": "Искать шрифты",
+    "source": "Источник",
+    "sources": {
+      "bundled": "Встроенные",
+      "system": "Системные"
+    },
+    "style": "Стиль"
+  },
+  "inference": {
+    "currentPage": "Текущая страница",
+    "currentPageDescription": "Обработать только страницу на холсте.",
+    "entireProject": "Весь проект",
+    "entireProjectDescription": "Обработать все страницы проекта.",
+    "model": "Модель",
+    "noModel": "Нет модели",
+    "notSet": "Не задано",
+    "output": "Результат",
+    "pipelineStages": "Этапы конвейера",
+    "providerDefault": "По умолчанию у провайдера",
+    "run": "Запустить",
+    "runProcessing": "Запустить обработку",
+    "scope": "Область",
+    "scopeShort": {
+      "page": "Страница",
+      "project": "Проект",
+      "selected-pages": "Выбранное"
+    },
+    "selectPagesFirst": "Сначала выберите страницы",
+    "selectedCount": "Выбрано страниц: {{count}}",
+    "selectedCount_one": "Выбрано страниц: {{count}}",
+    "selectedCount_other": "Выбрано страниц: {{count}}",
+    "selectedPages": "Выбранные страницы",
+    "selector": "Настройки обработки",
+    "shortcuts": "Параметры обработки",
+    "stageCount": "Этапов: {{count}}",
+    "stageCount_one": "Этапов: {{count}}",
+    "stageCount_other": "Этапов: {{count}}",
+    "stages": "Этапы",
+    "stop": "Остановить",
+    "stopProcessing": "Остановить обработку"
+  },
+  "inspector": {
+    "alignBottom": "Выровнять по нижнему краю",
+    "alignCenter": "По центру",
+    "alignLeft": "По левому краю",
+    "alignMiddle": "Выровнять по середине",
+    "alignRight": "По правому краю",
+    "alignTop": "Выровнять по верхнему краю",
+    "alignment": "Выравнивание",
+    "auto": "Авто",
+    "autoFit": "Автовписывание",
+    "border": "Обводка",
+    "borderColor": "Цвет обводки",
+    "borderWidth": "Ширина обводки",
+    "chooseFontSize": "Выбрать размер шрифта",
+    "color": "Цвет",
+    "customFrame": "Пользовательская рамка",
+    "decreaseBorderWidth": "Уменьшить ширину обводки",
+    "direction": "Направление",
+    "font": "Шрифт",
+    "fontSize": "Размер шрифта",
+    "fontStyle": "Начертание шрифта",
+    "fontStyles": {
+      "italic": "Курсив",
+      "normal": "Обычный",
+      "oblique": "Наклонный"
+    },
+    "fontWeight": "Насыщенность шрифта",
+    "horizontal": "Горизонтально",
+    "increaseBorderWidth": "Увеличить ширину обводки",
+    "opacity": "Непрозрачность",
+    "placement": "Размещение",
+    "resetAutoFit": "Вернуть автоподгонку",
+    "selectPage": "Выберите страницу для просмотра её слоёв.",
+    "size": "Размер",
+    "source": "Исходный текст",
+    "style": "Стиль",
+    "textColor": "Цвет текста",
+    "textDirection": "Направление текста",
+    "translation": "Перевод",
+    "type": "Типографика",
+    "unplaced": "Не размещено",
+    "vertical": "Вертикально",
+    "weight": "Насыщенность",
+    "width": "Ширина"
+  },
+  "languages": {
+    "en-US": "English",
+    "es-ES": "Español",
+    "ja-JP": "日本語",
+    "ko-KR": "한국어",
+    "pt-BR": "Português brasileiro",
+    "ru-RU": "Русский",
+    "tr-TR": "Türkçe",
+    "zh-CN": "简体中文",
+    "zh-TW": "繁體中文"
+  },
+  "layers": {
+    "delete": "Удалить {{name}}",
+    "edit": "Изменить {{name}}",
+    "empty": "На этой странице нет слоёв.",
+    "hide": "Скрыть {{name}}",
+    "imageName": "Изображение {{index}}",
+    "kinds": {
+      "cleanup": "Очистка",
+      "dialogue": "Диалог",
+      "freeText": "Свободный текст",
+      "group": "Группа",
+      "image": "Изображение",
+      "paint": "Рисование",
+      "text": "Текст",
+      "textGroup": "Группа текста"
+    },
+    "locked": "Заблокировано",
+    "lockedLabel": "{{name}} заблокирован",
+    "moveDown": "Переместить {{name}} вниз",
+    "moveUp": "Переместить {{name}} вверх",
+    "opacityLabel": "Непрозрачность {{name}}",
+    "originalArtwork": "Исходное изображение",
+    "show": "Показать {{name}}",
+    "sourceLabel": "Исходный текст {{name}}",
+    "textName": "Текст {{index}}",
+    "title": "Слои",
+    "translationLabel": "Перевод {{name}}"
+  },
+  "menu": {
+    "about": "О программе",
+    "closeProject": "Закрыть проект",
+    "delete": "Удалить выбранное",
+    "discord": "Discord",
+    "edit": "Правка",
+    "exportPng": "Экспорт PNG…",
+    "exportPsd": "Экспорт PSD…",
+    "file": "Файл",
+    "fit": "Вписать в окно",
+    "github": "GitHub",
+    "help": "Справка",
+    "importPages": "Импортировать страницы…",
+    "process": "Обработка",
+    "processLayers": "Обработать выбранные слои",
+    "processPages": "Обработать выбранные страницы",
+    "processProject": "Обработать проект",
+    "redo": "Повторить",
+    "runPhase": "Запустить: {{phase}}",
+    "selectAllLayers": "Выбрать все слои",
+    "settings": "Настройки",
+    "undo": "Отменить",
+    "view": "Вид"
+  },
+  "model": {
+    "baseUrl": "Базовый URL",
+    "default": "По умолчанию",
+    "instructions": "Инструкции",
+    "targetLanguage": "Язык перевода"
+  },
+  "modelPicker": {
+    "empty": "Нет доступных моделей.",
+    "loading": "Загрузка моделей…",
+    "noResults": "Нет моделей, соответствующих поиску.",
+    "search": "Искать модели",
+    "title": "Выбрать модель",
+    "useModel": "Использовать {{model}} от {{provider}}"
+  },
+  "navigator": {
+    "actionsFor": "Действия для {{page}}",
+    "delete": "Удалить",
+    "emptyDescription": "Импортируйте изображения или папку, чтобы добавить страницы.",
+    "emptyTitle": "Страниц пока нет",
+    "filter": "Фильтровать страницы",
+    "importAction": "Импорт",
+    "importFiles": "Файлы…",
+    "importFolder": "Папка…",
+    "importing": "Импорт страниц…",
+    "importingAction": "Импорт…",
+    "layerCount": "Слоёв: {{count}}",
+    "layerCount_one": "Слоёв: {{count}}",
+    "layerCount_other": "Слоёв: {{count}}",
+    "noImage": "Нет изображения",
+    "noResults": "Нет страниц, соответствующих фильтру.",
+    "pageName": "Название страницы",
+    "pages": "Страницы",
+    "rename": "Переименовать",
+    "renameDescription": "Выберите новое имя для страницы.",
+    "renameTitle": "Переименовать страницу"
+  },
+  "outputPicker": {
+    "instructions": "Инструкции по переводу",
+    "instructionsPlaceholder": "Необязательные указания по стилю, именам и форматированию.",
+    "targetLanguage": "Язык перевода",
+    "title": "Вывод перевода"
+  },
+  "phase": {
+    "detection": "Обнаружение",
+    "inpainting": "Восстановление",
+    "ocr": "OCR",
+    "translation": "Перевод"
+  },
+  "phaseDescription": {
+    "detection": "Находит текст на странице.",
+    "inpainting": "Восстанавливает рисунок после удаления текста.",
+    "ocr": "Считывает текст внутри каждой области.",
+    "translation": "Переводит исходный текст на целевой язык."
+  },
+  "providerDescriptions": {
+    "atlas-cloud": "Языковые модели, размещённые в Atlas.",
+    "caiyun": "API перевода Caiyun.",
+    "claude": "Модели Anthropic Claude.",
+    "deepl": "API перевода DeepL.",
+    "deepseek": "Языковые модели DeepSeek.",
+    "gemini": "Модели Google Gemini.",
+    "google-cloud-translation": "API Google Cloud Translation.",
+    "lm-studio": "Модели, предоставляемые LM Studio.",
+    "local": "Модели, работающие на этом устройстве.",
+    "openai": "Языковые модели OpenAI.",
+    "openai-compatible": "Любой сервер с API, совместимым с OpenAI.",
+    "openrouter": "Модели, маршрутизируемые через OpenRouter."
+  },
+  "resources": {
+    "cpu": "CPU",
+    "processUtilization": "Использование процессом",
+    "ram": "RAM",
+    "summary": "ОЗУ {{ram}}%, ЦП {{cpu}}%",
+    "title": "Ресурсы системы",
+    "tooltip": "ОЗУ {{ramUsed}} из {{ramTotal}} · ЦП {{cpu}}%",
+    "usedOfTotal": "Использовано {{used}} из {{total}}",
+    "vramUnavailable": "Недоступно",
+    "vramValue": "Видеопамять: {{value}}"
+  },
+  "settings": {
+    "appearance": {
+      "description": "Настройте вид рабочего пространства, не меняя отрисовку изображения.",
+      "interface": "Интерфейс",
+      "language": "Язык",
+      "theme": "Тема",
+      "themeDescription": "Системная тема следует настройке операционной системы.",
+      "themes": {
+        "dark": "Тёмная",
+        "light": "Светлая",
+        "system": "Системная"
+      },
+      "title": "Оформление"
+    },
+    "backToEditor": "Вернуться в редактор",
+    "generation": {
+      "description": "Настройте генерацию переведённого текста языковыми моделями.",
+      "enableThinking": "Включить рассуждение",
+      "frequencyPenalty": "Штраф за частоту",
+      "maxTokens": "Максимум токенов",
+      "minP": "Минимум P",
+      "presencePenalty": "Штраф за присутствие",
+      "repeatPenalty": "Штраф за повторение",
+      "sampling": "Сэмплирование",
+      "temperature": "Температура",
+      "thinking": "Рассуждение",
+      "thinkingDescription": "Предлагать моделям с поддержкой рассуждений использовать режим размышления.",
+      "title": "Генерация",
+      "topK": "Топ K",
+      "topP": "Top P",
+      "vision": "Ввод изображений"
+    },
+    "loading": "Загрузка настроек…",
+    "pipeline": {
+      "description": "Выберите модели и параметры обработки каждой страницы.",
+      "modelLabel": "Модель «{{stage}}»",
+      "options": {
+        "bubbleThreshold": "Порог пузыря",
+        "negativePrompt": "Негативный промпт",
+        "panelThreshold": "Порог панели",
+        "prompt": "Промпт",
+        "textThreshold": "Порог текста"
+      },
+      "processing": "Обработка",
+      "stages": {
+        "detection": {
+          "description": "Находит текст, пузыри и панели.",
+          "title": "Обнаружение"
+        },
+        "inpainting": {
+          "description": "Восстанавливает изображение под удалённым текстом.",
+          "title": "Восстановление"
+        },
+        "ocr": {
+          "description": "Считывает исходный текст в обнаруженных областях.",
+          "title": "OCR"
+        }
+      },
+      "title": "Конвейер"
+    },
+    "providers": {
+      "clearCredential": "Удалить учётные данные {{provider}}",
+      "configured": "Настроено",
+      "connections": "Подключения",
+      "connectionsDescription": "Учётные данные безопасно хранятся на этом устройстве.",
+      "credentialLabel": "Учётные данные {{provider}}",
+      "description": "Подключите провайдеров перевода и языковых моделей.",
+      "hideCredential": "Скрыть учётные данные {{provider}}",
+      "notConfigured": "Не настроено",
+      "revealCredential": "Показать учётные данные {{provider}}",
+      "title": "Провайдеры"
+    },
+    "shortcuts": {
+      "description": "Одноклавишные сочетания доступны, когда поле ввода текста не в фокусе.",
+      "inputLabel": "Сочетание для «{{action}}»",
+      "title": "Сочетания клавиш",
+      "tools": "Инструменты"
+    },
+    "tabs": {
+      "appearance": "Оформление",
+      "pipeline": "Конвейер",
+      "providers": "Провайдеры",
+      "shortcuts": "Сочетания клавиш",
+      "translation": "Перевод",
+      "typesetting": "Вёрстка"
+    },
+    "title": "Настройки",
+    "translation": {
+      "description": "Выберите модель настроенного провайдера и примените общие параметры перевода и генерации.",
+      "instructionsDescription": "Указания по именам, тону, терминологии или форматированию.",
+      "instructionsLabel": "Инструкции по переводу",
+      "instructionsPlaceholder": "Необязательные указания для всего проекта",
+      "model": "Модель",
+      "modelDescription": "Метки провайдеров показывают, где работает модель; подключения настраиваются отдельно.",
+      "modelQuantization": "Квантование модели",
+      "output": "Результат",
+      "quantization": "Квантование",
+      "quantizationDescription": "Меньшие форматы используют меньше памяти, обычно за счёт качества.",
+      "selectQuantization": "Выбрать квантование",
+      "title": "Перевод",
+      "translationModel": "Модель перевода"
+    },
+    "typesetting": {
+      "addFamily": "Добавить семейство шрифтов",
+      "defaultFamilies": "Семейства шрифтов по умолчанию",
+      "description": "Задайте упорядоченный стек шрифтов для текстового слоя без назначенного семейства.",
+      "empty": "Нет семейств по умолчанию. Koharu будет использовать системный запасной шрифт.",
+      "familyLabel": "Семейство шрифтов по умолчанию {{index}}",
+      "fontFallback": "Запасные шрифты",
+      "fontFallbackDescription": "Koharu использует первое доступное семейство, поддерживающее текст.",
+      "loadError": "Не удалось загрузить шрифты. Существующие семейства всё ещё можно удалить.",
+      "loadingFonts": "Загрузка шрифтов…",
+      "removeFamily": "Удалить {{family}}",
+      "title": "Вёрстка"
+    }
+  },
+  "start": {
+    "create": "Создать",
+    "deleteAction": "Удалить проект",
+    "deleteDescription": "Проект «{{name}}» и все его страницы будут удалены безвозвратно. Это действие нельзя отменить.",
+    "deleteLabel": "Удалить {{name}}",
+    "deleteTitle": "Удалить проект?",
+    "deleting": "Удаление…",
+    "description": "Откройте рабочее пространство или начните новый перевод.",
+    "emptyDescription": "Создайте первый проект, чтобы начать импорт страниц.",
+    "emptyTitle": "Проектов пока нет",
+    "loadingProjects": "Загрузка проектов…",
+    "newDescription": "Создайте чистое рабочее пространство для страниц, переводов и экспорта.",
+    "newProject": "Новый проект",
+    "projectKind": "Проект Koharu",
+    "projectList": "Проекты",
+    "projectName": "Имя проекта",
+    "projectNamePlaceholder": "Мой новый проект",
+    "storageHint": "Проекты хранятся локально в папке «Документы».",
+    "title": "Проекты",
+    "yourProjects": "Ваши проекты"
+  },
+  "startup": {
+    "description": "Загрузка локальных сред выполнения ИИ и подготовка рабочего пространства. Первый запуск может занять некоторое время.",
+    "opening": "Запуск Koharu…",
+    "status": "Инициализация локальных сред выполнения",
+    "title": "Подготовка Koharu"
+  },
+  "status": {
+    "zoom": "Масштаб"
+  },
+  "tools": {
+    "brushSize": "Размер кисти",
+    "brushSizeInput": "Размер кисти",
+    "brushSizePixels": "Размер кисти: {{size}} пикс.",
+    "brushSizeShort": "{{size}} пкс",
+    "color_picker": "Пипетка",
+    "decreaseBrushSize": "Уменьшить размер кисти",
+    "draw": "Рисование",
+    "eraser": "Ластик",
+    "increaseBrushSize": "Увеличить размер кисти",
+    "pan": "Перемещение",
+    "remove": "Удаление",
+    "select": "Выбор",
+    "text": "Текст"
+  },
+  "updater": {
+    "available": {
+      "description": "Koharu <strong>{{version}}</strong> готов к установке",
+      "title": "Доступно обновление"
+    },
+    "close": "Закрыть",
+    "downloading": {
+      "subtitle": "Koharu {{version}}",
+      "title": "Загрузка обновления…"
+    },
+    "error": {
+      "description": "Что-то пошло не так во время обновления",
+      "title": "Ошибка обновления"
+    },
+    "later": "Позже",
+    "noNotes": "Примечания к выпуску отсутствуют.",
+    "retry": "Повторить",
+    "update": "Обновить"
+  },
+  "window": {
+    "close": "Закрыть",
+    "maximize": "Развернуть",
+    "minimize": "Свернуть",
+    "restore": "Восстановить"
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "manga-translate-mvp",
-  "version": "0.8.0",
+  "version": "0.12.0",
   "private": true,
   "license": "GPL-3.0-only",
   "type": "module",
@@ -13,7 +13,7 @@
     "build:app": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1",
     "build:app:cuda": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-engine.ps1 -Cuda",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check extension/capture-utils.js && node --check extension/error-utils.js && node --check extension/profile-utils.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup/popup.js"
+    "check": "node --check extension/capture-utils.js && node --check extension/diagnostics-utils.js && node --check extension/error-utils.js && node --check extension/profile-utils.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup/popup.js"
   },
   "engines": {
     "node": ">=20"

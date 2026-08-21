@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 pub const HOST_NAME: &str = "com.manga_translate.local";
 pub const START_EVENT_NAME: &str = "Local\\MangaTranslateStartService";
+#[cfg(windows)]
+const NATIVE_SIDECARS: &[&str] = &["koharu-torch.dll"];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +88,24 @@ pub fn install() -> Result<()> {
                     installed_exe.display()
                 )
             })?;
+        }
+        let source_dir = current_exe
+            .parent()
+            .context("MangaTranslate.exe has no parent directory")?;
+        for file_name in NATIVE_SIDECARS {
+            let source = source_dir.join(file_name);
+            let destination = app_dir.join(file_name);
+            if !source.is_file() {
+                bail!(
+                    "Required native library is missing: {}. Build or extract the complete release package before installing.",
+                    source.display()
+                );
+            }
+            if !same_path(&source, &destination) {
+                std::fs::copy(&source, &destination).with_context(|| {
+                    format!("copy {} to {}", source.display(), destination.display())
+                })?;
+            }
         }
 
         let manifest_path = app_dir.join("native-host.json");

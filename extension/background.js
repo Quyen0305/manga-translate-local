@@ -82,6 +82,16 @@ async function handleMessage(message, sender) {
       return lookupCachedImage(message.payload, sender);
     case "CHECK_ENGINE":
       return checkEngine();
+    case "GET_DIAGNOSTICS":
+      return getDiagnostics();
+    case "GET_ENGINE_STATUS":
+      return getEngineStatus();
+    case "ENGINE_ACTION":
+      return engineAction(message.payload?.action);
+    case "SET_ENGINE_POLICY":
+      return setEnginePolicy(message.payload);
+    case "CLEAN_STORAGE":
+      return cleanStorage(message.payload);
     case "LIST_MODELS":
       return listModels(message.payload);
     case "CLEAR_CACHE":
@@ -143,6 +153,65 @@ async function checkEngine() {
   } catch (error) {
     return { ok: false, error: error.message || "MangaTranslate.exe chưa chạy" };
   }
+}
+
+async function getDiagnostics() {
+  const response = await serviceFetch("/api/v1/diagnostics");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không đọc được diagnostics (HTTP ${response.status})`);
+  }
+  return { ok: true, data: await response.json() };
+}
+
+async function getEngineStatus() {
+  const response = await serviceFetch("/api/v1/engine/status");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không đọc được trạng thái engine (HTTP ${response.status})`);
+  }
+  return { ok: true, data: await response.json() };
+}
+
+async function engineAction(action) {
+  if (!["unload", "preload", "restart"].includes(action)) {
+    throw new Error("Thao tác engine không hợp lệ");
+  }
+  const response = await serviceFetch(`/api/v1/engine/${action}`, { method: "POST" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không điều khiển được engine (HTTP ${response.status})`);
+  }
+  return { ok: true, data: await response.json() };
+}
+
+async function setEnginePolicy(payload) {
+  const response = await serviceFetch("/api/v1/engine/policy", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      idleTimeoutSeconds: Number(payload?.idleTimeoutSeconds || 0),
+      preloadOnStart: Boolean(payload?.preloadOnStart),
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không lưu được lifecycle policy (HTTP ${response.status})`);
+  }
+  return { ok: true, data: await response.json() };
+}
+
+async function cleanStorage(payload) {
+  const response = await serviceFetch("/api/v1/storage/cleanup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ target: payload?.target || "" }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không dọn được dữ liệu (HTTP ${response.status})`);
+  }
+  return { ok: true, data: await response.json() };
 }
 
 async function translateImage(payload, sender) {

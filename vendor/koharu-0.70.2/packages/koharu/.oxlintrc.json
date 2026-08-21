@@ -1,0 +1,28 @@
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "react/exhaustive-deps": "warn",
+    "no-useless-catch": "warn",
+    "typescript/no-useless-empty-export": "warn",
+    "unicorn/no-empty-file": "warn",
+    "unicorn/no-unnecessary-await": "warn",
+    "unicorn/no-useless-spread": "warn",
+    "no-unused-vars": "warn",
+    "unicorn/no-document-cookie": "warn",
+    "no-useless-rename": "warn",
+    "unicorn/no-useless-length-check": "warn",
+    "no-useless-escape": "warn",
+    "typescript/prefer-as-const": "warn",
+    "unicorn/no-useless-fallback-in-spread": "warn",
+    "no-extra-boolean-cast": "warn",
+    "unicorn/no-new-array": "warn",
+    "unicorn/prefer-set-size": "warn",
+    "typescript/no-this-alias": "warn",
+    "unicorn/prefer-string-starts-ends-with": "warn"
+  },
+  "ignorePatterns": [".next/", "out/", "dist/", "build/", "coverage/", "lib/api/**/*.msw.ts"]
+}

@@ -28,6 +28,10 @@ impl AppError {
         Self::new("ENGINE_ERROR", StatusCode::BAD_GATEWAY, message)
     }
 
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::new("ENGINE_BUSY", StatusCode::CONFLICT, message)
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new("INTERNAL_ERROR", StatusCode::INTERNAL_SERVER_ERROR, message)
     }

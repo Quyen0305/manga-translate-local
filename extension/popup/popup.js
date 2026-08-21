@@ -1,4 +1,13 @@
 import { diagnosticHint, ERROR_LOG_KEY } from "../error-utils.js";
+import {
+  computeModeLabel,
+  cudaStatusLabel,
+  engineStateLabel,
+  formatBytes,
+  formatDuration,
+  runtimeIssueLabel,
+  runtimeStatusLabel,
+} from "../diagnostics-utils.js";
 import { migrateLegacyProfile, profileFor, profileKey, saveProfile } from "../profile-utils.js";
 
 const DEFAULTS = {
@@ -44,6 +53,7 @@ let apiProfiles = {};
 let providerModels = {};
 let activeProfile = { provider: DEFAULTS.provider, model: DEFAULTS.model };
 let modelChangeTimer;
+let cleanupCandidates = [];
 
 document.addEventListener("DOMContentLoaded", initialize);
 document.querySelector("#save").addEventListener("click", save);
@@ -51,6 +61,13 @@ document.querySelector("#clear-cache").addEventListener("click", clearCache);
 document.querySelector("#refresh-models").addEventListener("click", () => refreshModels());
 document.querySelector("#check-api").addEventListener("click", checkApiConfiguration);
 document.querySelector("#clear-errors").addEventListener("click", clearErrors);
+document.querySelector("#refresh-diagnostics").addEventListener("click", updateDiagnostics);
+document.querySelector("#cleanup-list").addEventListener("click", handleCleanupClick);
+document.querySelector("#load-engine").addEventListener("click", () => runEngineAction("preload"));
+document.querySelector("#unload-engine").addEventListener("click", () => runEngineAction("unload"));
+document.querySelector("#restart-engine").addEventListener("click", () => runEngineAction("restart"));
+document.querySelector("#idle-timeout").addEventListener("change", saveEnginePolicy);
+document.querySelector("#preload-engine").addEventListener("change", saveEnginePolicy);
 fields.provider.addEventListener("change", () => {
   const provider = fields.provider.value;
   fields.model.value = providerModels[provider] || MODELS[provider];
@@ -85,7 +102,8 @@ async function initialize() {
   }
   loadActiveProfile();
   updateProviderUi();
-  await Promise.all([checkEngine(), updateCacheCount(), updateErrorLog()]);
+  await Promise.all([checkEngine(), updateDiagnostics(), updateCacheCount(), updateErrorLog()]);
+  setInterval(updateEngineStatus, 2000);
   if (settings.apiKey || (settings.provider === "openai-compatible" && settings.baseUrl)) {
     await refreshModels(true);
   }
@@ -297,7 +315,9 @@ async function checkEngine() {
   const status = document.querySelector("#engine-status");
   const result = await chrome.runtime.sendMessage({ type: "CHECK_ENGINE" });
   status.dataset.state = result.ok ? "ready" : "offline";
-  status.textContent = result.ok ? (result.data.engine === "ready" ? "Sẵn sàng" : "Service đã chạy") : "Chưa chạy";
+  status.textContent = result.ok
+    ? engineStateLabel({ state: result.data.engine })
+    : "Chưa chạy";
   if (!result.ok) {
     await chrome.runtime.sendMessage({
       type: "REPORT_ERROR",
@@ -307,6 +327,182 @@ async function checkEngine() {
         message: result.error || "Local service chưa chạy",
       },
     });
+  }
+}
+
+async function updateEngineStatus() {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "GET_ENGINE_STATUS" });
+    if (!result?.ok) return;
+    renderEngineLifecycle(result.data.engine || {});
+    renderCleanupCandidates(cleanupCandidates, result.data.engine || {});
+    const status = document.querySelector("#engine-status");
+    status.dataset.state = "ready";
+    status.textContent = engineStateLabel(result.data.engine || {});
+  } catch {
+    // The full diagnostics refresh reports actionable connection errors.
+  }
+}
+
+async function updateDiagnostics() {
+  const refresh = document.querySelector("#refresh-diagnostics");
+  const summary = document.querySelector("#system-summary");
+  refresh.disabled = true;
+  refresh.textContent = "…";
+  summary.textContent = "Đang kiểm tra";
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "GET_DIAGNOSTICS" });
+    if (!result?.ok) throw new Error(result?.error || "Không đọc được diagnostics");
+    renderDiagnostics(result.data);
+  } catch (error) {
+    summary.textContent = "Không đọc được";
+    document.querySelector("#cuda-message").textContent = error.message || "Không đọc được diagnostics.";
+    document.querySelector("#runtime-message").textContent = "";
+    cleanupCandidates = [];
+    document.querySelector("#cleanup-list").replaceChildren();
+    document.querySelector("#cleanup-empty").hidden = false;
+  } finally {
+    refresh.disabled = false;
+    refresh.textContent = "↻";
+  }
+}
+
+function renderDiagnostics(data) {
+  const { engine = {}, cuda = {}, storage = {} } = data || {};
+  const mode = computeModeLabel(engine);
+  document.querySelector("#system-summary").textContent = `${engineStateLabel(engine)} · ${formatBytes(storage.totalBytes)}`;
+  document.querySelector("#compute-mode").textContent = engine.busy ? `${mode} · đang xử lý` : mode;
+  renderEngineLifecycle(engine);
+  const cudaStatus = document.querySelector("#cuda-status");
+  cudaStatus.dataset.state = cuda.status || "unavailable";
+  cudaStatus.textContent = cudaStatusLabel(cuda);
+  const runtime = storage.activeRuntime || {};
+  const runtimeHealth = document.querySelector("#runtime-health");
+  runtimeHealth.dataset.state = runtime.status || "missing";
+  runtimeHealth.textContent = runtimeStatusLabel(runtime);
+  document.querySelector("#runtime-message").textContent = runtimeIssueLabel(runtime);
+  document.querySelector("#active-runtime-size").textContent = formatBytes(runtime.bytes);
+  document.querySelector("#legacy-size").textContent = formatBytes(storage.legacyBytes);
+  document.querySelector("#reclaimable-size").textContent = formatBytes(storage.reclaimableBytes);
+  const other = Number(storage.projectsBytes || 0) + Number(storage.webviewBytes || 0) + Number(storage.otherBytes || 0);
+  document.querySelector("#other-size").textContent = formatBytes(other);
+  document.querySelector("#cuda-message").textContent = engine.fallbackReason || cuda.message || "";
+  const dataDirectory = document.querySelector("#data-directory");
+  dataDirectory.textContent = storage.dataDir || "";
+  dataDirectory.title = storage.dataDir || "";
+  renderCleanupCandidates(storage.cleanupCandidates || [], engine);
+}
+
+function renderCleanupCandidates(candidates, engine) {
+  cleanupCandidates = candidates;
+  const busy = engine.state === "busy" || engine.state === "loading";
+  const list = document.querySelector("#cleanup-list");
+  const rows = candidates.map((candidate) => {
+    const row = document.createElement("div");
+    row.className = "cleanup-row";
+    const button = document.createElement("button");
+    button.className = "secondary";
+    button.type = "button";
+    button.textContent = "Dọn";
+    button.disabled = busy;
+    button.dataset.target = candidate.target;
+    button.dataset.label = candidate.label;
+    button.dataset.confirm = String(Boolean(candidate.requiresConfirmation));
+    row.append(
+      textElement("span", "cleanup-label", candidate.label),
+      textElement("span", "cleanup-size", formatBytes(candidate.bytes)),
+      button,
+    );
+    return row;
+  });
+  list.replaceChildren(...rows);
+  document.querySelector("#cleanup-empty").hidden = rows.length > 0;
+}
+
+function renderEngineLifecycle(engine) {
+  const resources = engine.resources || {};
+  document.querySelector("#lifecycle-state").textContent = engineStateLabel(engine);
+  document.querySelector("#process-memory").textContent = formatBytes(resources.processMemoryBytes);
+  const gpuMemory = resources.gpuMemoryUsedBytes == null
+    ? "-"
+    : resources.gpuMemoryBudgetBytes
+      ? `${formatBytes(resources.gpuMemoryUsedBytes)} / ${formatBytes(resources.gpuMemoryBudgetBytes)}`
+      : formatBytes(resources.gpuMemoryUsedBytes);
+  document.querySelector("#gpu-memory").textContent = gpuMemory;
+  document.querySelector("#idle-remaining").textContent = engine.state === "sleeping"
+    ? "Đã giải phóng"
+    : Number(engine.idleTimeoutSeconds) === 0
+      ? "Đã tắt"
+      : formatDuration(engine.idleSecondsRemaining);
+  document.querySelector("#idle-timeout").value = String(engine.idleTimeoutSeconds ?? 900);
+  document.querySelector("#preload-engine").checked = Boolean(engine.preloadOnStart);
+  const busy = engine.state === "busy" || engine.state === "loading";
+  document.querySelector("#load-engine").disabled = busy || Boolean(engine.loaded);
+  document.querySelector("#unload-engine").disabled = busy || !engine.loaded;
+  document.querySelector("#restart-engine").disabled = busy;
+}
+
+async function runEngineAction(action) {
+  const buttons = [...document.querySelectorAll(".engine-actions button")];
+  buttons.forEach((button) => { button.disabled = true; });
+  const labels = {
+    preload: "Đang nạp engine…",
+    unload: "Đang giải phóng engine…",
+    restart: "Đang khởi động lại engine…",
+  };
+  showMessage(labels[action]);
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "ENGINE_ACTION", payload: { action } });
+    if (!result?.ok) throw new Error(result?.error || "Không điều khiển được engine");
+    renderEngineLifecycle(result.data.engine || {});
+    showMessage(action === "unload" ? "Engine đã được giải phóng." : "Engine đã sẵn sàng.");
+    await checkEngine();
+  } catch (error) {
+    showMessage(error.message || "Không điều khiển được engine.", true);
+  } finally {
+    await updateEngineStatus();
+  }
+}
+
+async function saveEnginePolicy() {
+  const payload = {
+    idleTimeoutSeconds: Number(document.querySelector("#idle-timeout").value),
+    preloadOnStart: document.querySelector("#preload-engine").checked,
+  };
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "SET_ENGINE_POLICY", payload });
+    if (!result?.ok) throw new Error(result?.error || "Không lưu được cấu hình engine");
+    renderEngineLifecycle(result.data.engine || {});
+    showMessage("Đã lưu cấu hình lifecycle engine.");
+  } catch (error) {
+    showMessage(error.message || "Không lưu được cấu hình engine.", true);
+    await updateEngineStatus();
+  }
+}
+
+function handleCleanupClick(event) {
+  const button = event.target.closest("button[data-target]");
+  if (!button) return;
+  cleanStorage(button);
+}
+
+async function cleanStorage(button) {
+  const target = button.dataset.target;
+  const label = button.dataset.label || "dữ liệu đã chọn";
+  if (button.dataset.confirm === "true" && !confirm(`Xóa ${label}? Thao tác này không thể hoàn tác.`)) return;
+  button.disabled = true;
+  button.textContent = "Đang dọn…";
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: "CLEAN_STORAGE",
+      payload: { target },
+    });
+    if (!result?.ok) throw new Error(result?.error || "Không dọn được cache tải xuống");
+    showMessage(`Đã giải phóng ${formatBytes(result.data.freedBytes)}.`);
+    await updateDiagnostics();
+  } catch (error) {
+    showMessage(error.message || "Không dọn được cache tải xuống.", true);
+    await updateDiagnostics();
   }
 }
 

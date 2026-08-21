@@ -4,8 +4,8 @@ use std::thread::JoinHandle;
 
 use tokio::sync::oneshot;
 
-use crate::config::AppConfig;
-use crate::engine::Engine;
+use crate::config::{AppConfig, LifecyclePolicy};
+use crate::engine::{Engine, EngineDiagnostics};
 use crate::models::ModelDiscovery;
 
 pub struct AppState {
@@ -75,11 +75,13 @@ impl ServiceController {
                     };
                     running.store(true, Ordering::Release);
                     tracing::info!(address = %state.config.socket_addr(), "service started");
+                    let lifecycle = spawn_lifecycle_monitor(state.engine.clone());
                     let result = axum::serve(listener, crate::http::router(state))
                         .with_graceful_shutdown(async {
                             let _ = receiver.await;
                         })
                         .await;
+                    lifecycle.abort();
                     running.store(false, Ordering::Release);
                     if let Err(error) = result {
                         tracing::error!(%error, "HTTP service stopped with an error");
@@ -99,19 +101,81 @@ impl ServiceController {
             let _ = handle.thread.join();
         }
         self.running.store(false, Ordering::Release);
-        self.state.engine.unload();
+        self.state.engine.unload("service-stop");
     }
 
     pub fn restart_engine(&self) {
-        self.state.engine.unload();
+        spawn_engine_operation(self.state.engine.clone(), "restart", |engine| async move {
+            engine.restart().await
+        });
+    }
+
+    pub fn unload_engine(&self) -> anyhow::Result<bool> {
+        self.state.engine.request_unload("manual")
+    }
+
+    pub fn engine_diagnostics(&self) -> EngineDiagnostics {
+        self.state.engine.diagnostics()
+    }
+
+    pub fn lifecycle_policy(&self) -> LifecyclePolicy {
+        self.state.engine.lifecycle_policy()
+    }
+
+    pub fn update_lifecycle_policy(&self, policy: LifecyclePolicy) -> anyhow::Result<()> {
+        self.state.engine.update_lifecycle_policy(policy)
     }
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Acquire)
     }
+}
 
-    pub fn engine_ready(&self) -> bool {
-        self.state.engine.is_ready()
+pub fn spawn_lifecycle_monitor(engine: Arc<Engine>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        if engine.preload_on_start()
+            && let Err(error) = engine.preload().await
+        {
+            tracing::error!(%error, "could not preload engine");
+        }
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            let engine = engine.clone();
+            match tokio::task::spawn_blocking(move || engine.unload_if_idle()).await {
+                Ok(true) => tracing::info!("engine entered sleep after idle timeout"),
+                Ok(false) => {}
+                Err(error) => tracing::error!(%error, "idle watchdog failed"),
+            }
+        }
+    })
+}
+
+fn spawn_engine_operation<F, Fut>(engine: Arc<Engine>, operation: &'static str, task: F)
+where
+    F: FnOnce(Arc<Engine>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
+{
+    let result = std::thread::Builder::new()
+        .name(format!("engine-{operation}"))
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            match runtime {
+                Ok(runtime) => {
+                    if let Err(error) = runtime.block_on(task(engine)) {
+                        tracing::error!(%error, operation, "engine lifecycle operation failed");
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(%error, operation, "could not create lifecycle runtime")
+                }
+            }
+        });
+    if let Err(error) = result {
+        tracing::error!(%error, operation, "could not start lifecycle operation");
     }
 }
 
@@ -138,6 +202,7 @@ mod tests {
             data_dir: temp.path().join("data"),
             app_dir: temp.path().to_path_buf(),
             cpu: true,
+            lifecycle: LifecyclePolicy::default(),
             allowed_extension_origins: Vec::new(),
         };
         let state = Arc::new(AppState {
@@ -149,7 +214,7 @@ mod tests {
 
         controller.start();
         wait_until(|| controller.is_running());
-        assert!(!controller.engine_ready());
+        assert!(!controller.state.engine.is_ready());
         controller.stop();
         assert!(!controller.is_running());
 
