@@ -34,3 +34,9 @@ test("lịch sử lỗi giới hạn 20 mục và gộp lỗi liên tiếp", () 
 test("gợi ý lỗi provider hướng người dùng kiểm tra API", () => {
   assert.match(diagnosticHint("PROVIDER_API_ERROR"), /Authentication Key/);
 });
+
+test("gợi ý recovery phân biệt CUDA và DLL", () => {
+  assert.match(diagnosticHint("CUDA_INCOMPATIBLE"), /CPU fallback/);
+  assert.match(diagnosticHint("RUNTIME_DLL_MISSING"), /DLL bắt buộc/);
+  assert.match(diagnosticHint("RUNTIME_DLL_INCOMPATIBLE"), /không khớp phiên bản/);
+});

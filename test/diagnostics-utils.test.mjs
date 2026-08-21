@@ -6,6 +6,8 @@ import {
   engineStateLabel,
   formatBytes,
   formatDuration,
+  recoveryIssueLabel,
+  recoveryStatusLabel,
   runtimeIssueLabel,
   runtimeStatusLabel,
 } from "../extension/diagnostics-utils.js";
@@ -42,6 +44,24 @@ test("runtime health phân biệt kho đầy đủ và gói cài dở", () => {
       status: "incomplete",
       components: [{ label: "Torch", status: "missing", optional: false }],
     }),
-    "Thiếu: Torch.",
+    "Runtime cần xử lý: Torch.",
+  );
+});
+
+test("recovery hiển thị CPU fallback và watchdog service", () => {
+  assert.equal(
+    recoveryStatusLabel({ recovery: { retryGpuAvailable: true } }, { status: "running" }),
+    "CPU fallback",
+  );
+  assert.equal(
+    recoveryStatusLabel({}, { status: "running", restartCount: 2 }),
+    "Đã phục hồi 2 lần",
+  );
+  assert.match(
+    recoveryIssueLabel(
+      { fallbackReason: "CUDA PTX không tương thích", recovery: { retryGpuAvailable: true } },
+      {},
+    ),
+    /CUDA PTX/,
   );
 });

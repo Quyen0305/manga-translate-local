@@ -48,6 +48,7 @@ pub struct Engine {
     loaded_at_epoch_seconds: AtomicU64,
     idle_timeout_seconds: AtomicU64,
     preload_on_start: AtomicBool,
+    recovery: RwLock<RecoveryState>,
     init_lock: Mutex<()>,
     job_lock: Mutex<()>,
 }
@@ -81,7 +82,28 @@ pub struct EngineDiagnostics {
     pub idle_timeout_seconds: u64,
     pub idle_seconds_remaining: Option<u64>,
     pub preload_on_start: bool,
+    pub recovery: RecoveryDiagnostics,
     pub resources: EngineResources,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryDiagnostics {
+    pub retry_gpu_available: bool,
+    pub recovery_count: u64,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub last_action: Option<String>,
+    pub last_event_epoch_seconds: Option<u64>,
+}
+
+#[derive(Default)]
+struct RecoveryState {
+    recovery_count: u64,
+    last_error_code: Option<String>,
+    last_error_message: Option<String>,
+    last_action: Option<String>,
+    last_event_epoch_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -103,6 +125,7 @@ impl Engine {
             force_cpu: AtomicBool::new(config.cpu),
             idle_timeout_seconds: AtomicU64::new(config.lifecycle.idle_timeout_seconds),
             preload_on_start: AtomicBool::new(config.lifecycle.preload_on_start),
+            recovery: RwLock::new(RecoveryState::default()),
             config,
             app: RwLock::new(None),
             busy: AtomicBool::new(false),
@@ -270,6 +293,7 @@ impl Engine {
             idle_seconds_remaining: (loaded && timeout > 0)
                 .then(|| timeout.saturating_sub(epoch_seconds().saturating_sub(last_activity))),
             preload_on_start: self.preload_on_start(),
+            recovery: self.recovery_diagnostics(force_cpu),
             resources,
         }
     }
@@ -295,9 +319,10 @@ impl Engine {
         filename: String,
         settings: TranslationSettings,
     ) -> Result<Vec<u8>, AppError> {
-        let app = self.ensure_app().await.map_err(|error| {
-            AppError::engine(format!("Could not initialize the Koharu engine: {error:#}"))
-        })?;
+        let app = self
+            .ensure_app()
+            .await
+            .map_err(|error| self.engine_error(error, "Không khởi tạo được Koharu engine"))?;
         match translate_with_app(&app, &image, &filename, &settings).await {
             Ok(bytes) => Ok(bytes),
             Err(error) if !app.cpu_only && is_cuda_compatibility_error(&format!("{error:#}")) => {
@@ -306,13 +331,54 @@ impl Engine {
                 drop(app);
                 self.activate_cpu_fallback(reason);
                 let cpu_app = self.ensure_app().await.map_err(|error| {
-                    AppError::engine(format!("Could not initialize CPU fallback: {error:#}"))
+                    self.engine_error(error, "Không khởi tạo được CPU fallback")
                 })?;
                 translate_with_app(&cpu_app, &image, &filename, &settings)
                     .await
-                    .map_err(|error| AppError::engine(format!("CPU fallback failed: {error:#}")))
+                    .map_err(|error| self.engine_error(error, "CPU fallback xử lý thất bại"))
             }
-            Err(error) => Err(AppError::engine(format!("{error:#}"))),
+            Err(error) => Err(self.engine_error(error, "Koharu pipeline xử lý thất bại")),
+        }
+    }
+
+    pub async fn retry_gpu(&self) -> Result<bool> {
+        let _job = self
+            .job_lock
+            .try_lock()
+            .map_err(|_| anyhow!("engine is busy"))?;
+        if self.config.cpu {
+            bail!("engine was started in CPU-only mode");
+        }
+        if !self.force_cpu.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        let cuda = CudaDiagnostics::collect(false);
+        if cuda.requires_cpu_fallback() {
+            self.record_failure("CUDA_INCOMPATIBLE", &cuda.message, "gpu-retry-rejected");
+            bail!(cuda.message);
+        }
+
+        self.unload("gpu-retry");
+        self.force_cpu.store(false, Ordering::Release);
+        if let Ok(mut fallback_reason) = self.fallback_reason.write() {
+            *fallback_reason = None;
+        }
+        self.touch();
+        match self.ensure_app().await {
+            Ok(app) if !app.cpu_only => {
+                self.record_recovery("gpu-restored");
+                Ok(true)
+            }
+            Ok(_) => {
+                let reason = "GPU retry unexpectedly initialized a CPU engine".to_string();
+                self.activate_cpu_fallback(reason.clone());
+                bail!(reason)
+            }
+            Err(error) => {
+                let details = format!("{error:#}");
+                self.activate_cpu_fallback(details.clone());
+                bail!(details)
+            }
         }
     }
 
@@ -332,7 +398,15 @@ impl Engine {
         }
         let cpu = self.config.cpu || self.force_cpu.load(Ordering::Acquire);
         self.loading.store(true, Ordering::Release);
-        let initialized = initialize_app(&self.config, cpu).await;
+        let initialized = match initialize_app(&self.config, cpu).await {
+            Err(error) if !cpu && is_cuda_compatibility_error(&format!("{error:#}")) => {
+                let reason = format!("CUDA không tương thích khi khởi tạo: {error:#}");
+                tracing::warn!(%reason, "retrying engine initialization with CPU fallback");
+                self.activate_cpu_fallback(reason);
+                initialize_app(&self.config, true).await
+            }
+            result => result,
+        };
         self.loading.store(false, Ordering::Release);
         let app = initialized?;
         *self
@@ -347,11 +421,62 @@ impl Engine {
     }
 
     fn activate_cpu_fallback(&self, reason: String) {
-        self.force_cpu.store(true, Ordering::Release);
+        let changed = !self.force_cpu.swap(true, Ordering::AcqRel);
         if let Ok(mut fallback_reason) = self.fallback_reason.write() {
-            *fallback_reason = Some(reason);
+            *fallback_reason = Some(reason.clone());
+        }
+        self.record_failure("CUDA_INCOMPATIBLE", &reason, "cpu-fallback");
+        if changed && let Ok(mut recovery) = self.recovery.write() {
+            recovery.recovery_count = recovery.recovery_count.saturating_add(1);
         }
         self.unload("cuda-fallback");
+    }
+
+    fn engine_error(&self, error: anyhow::Error, context: &str) -> AppError {
+        let details = format!("{error:#}");
+        let classification = classify_engine_error(&details);
+        self.record_failure(classification.code, &details, "failed");
+        AppError::engine_code(
+            classification.code,
+            format!("{context}: {details}. {}", classification.hint),
+        )
+    }
+
+    fn record_failure(&self, code: &str, message: &str, action: &str) {
+        if let Ok(mut recovery) = self.recovery.write() {
+            recovery.last_error_code = Some(code.to_owned());
+            recovery.last_error_message = Some(message.chars().take(800).collect());
+            recovery.last_action = Some(action.to_owned());
+            recovery.last_event_epoch_seconds = Some(epoch_seconds());
+        }
+    }
+
+    fn record_recovery(&self, action: &str) {
+        if let Ok(mut recovery) = self.recovery.write() {
+            recovery.recovery_count = recovery.recovery_count.saturating_add(1);
+            recovery.last_action = Some(action.to_owned());
+            recovery.last_event_epoch_seconds = Some(epoch_seconds());
+        }
+    }
+
+    fn recovery_diagnostics(&self, force_cpu: bool) -> RecoveryDiagnostics {
+        let recovery = self.recovery.read().ok();
+        RecoveryDiagnostics {
+            retry_gpu_available: !self.config.cpu && force_cpu,
+            recovery_count: recovery.as_ref().map_or(0, |state| state.recovery_count),
+            last_error_code: recovery
+                .as_ref()
+                .and_then(|state| state.last_error_code.clone()),
+            last_error_message: recovery
+                .as_ref()
+                .and_then(|state| state.last_error_message.clone()),
+            last_action: recovery
+                .as_ref()
+                .and_then(|state| state.last_action.clone()),
+            last_event_epoch_seconds: recovery
+                .as_ref()
+                .and_then(|state| state.last_event_epoch_seconds),
+        }
     }
 
     fn touch(&self) {
@@ -501,6 +626,68 @@ fn is_cuda_compatibility_error(message: &str) -> bool {
     ]
     .iter()
     .any(|needle| message.contains(needle))
+}
+
+struct EngineErrorClassification {
+    code: &'static str,
+    hint: &'static str,
+}
+
+fn classify_engine_error(message: &str) -> EngineErrorClassification {
+    let message = message.to_ascii_lowercase();
+    if is_cuda_compatibility_error(&message) {
+        return EngineErrorClassification {
+            code: "CUDA_INCOMPATIBLE",
+            hint: "Engine đã chuyển sang CPU; cập nhật driver rồi dùng Thử lại GPU.",
+        };
+    }
+    if [
+        "module could not be found",
+        "specified module could not be found",
+        "dll not found",
+        "cannot find the file",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+    {
+        return EngineErrorClassification {
+            code: "RUNTIME_DLL_MISSING",
+            hint: "Runtime đang thiếu DLL; kiểm tra Runtime trong popup và cài lại nếu cần.",
+        };
+    }
+    if [
+        "entry point could not be located",
+        "procedure could not be found",
+        "not a valid win32 application",
+        "bad image",
+        "incompatible library",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+    {
+        return EngineErrorClassification {
+            code: "RUNTIME_DLL_INCOMPATIBLE",
+            hint: "DLL không khớp phiên bản engine; không chép DLL thủ công giữa các runtime.",
+        };
+    }
+    if [
+        "incomplete package",
+        "installer did not create",
+        "runtime store",
+        ".install-",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+    {
+        return EngineErrorClassification {
+            code: "RUNTIME_INCOMPLETE",
+            hint: "Xóa gói cài dở trong Quản lý kho engine rồi nạp lại engine.",
+        };
+    }
+    EngineErrorClassification {
+        code: "ENGINE_ERROR",
+        hint: "Mở Chi tiết lỗi và log Manga Translate để xem bước pipeline thất bại.",
+    }
 }
 
 async fn translate_with_app(
@@ -726,7 +913,10 @@ fn non_empty(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TranslationSettings, idle_expired, is_cuda_compatibility_error, pipeline_configs};
+    use super::{
+        TranslationSettings, classify_engine_error, idle_expired, is_cuda_compatibility_error,
+        pipeline_configs,
+    };
 
     #[test]
     fn only_cuda_compatibility_failures_trigger_fallback() {
@@ -736,6 +926,22 @@ mod tests {
         assert!(!is_cuda_compatibility_error(
             "Provider returned HTTP 401 for an invalid API key"
         ));
+    }
+
+    #[test]
+    fn recovery_classifies_cuda_and_runtime_dll_failures() {
+        assert_eq!(
+            classify_engine_error("CUDA_ERROR_UNSUPPORTED_PTX_VERSION").code,
+            "CUDA_INCOMPATIBLE"
+        );
+        assert_eq!(
+            classify_engine_error("The specified module could not be found: llama.dll").code,
+            "RUNTIME_DLL_MISSING"
+        );
+        assert_eq!(
+            classify_engine_error("The procedure could not be found in torch.dll").code,
+            "RUNTIME_DLL_INCOMPATIBLE"
+        );
     }
 
     #[test]

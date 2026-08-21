@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Manga Translate Local",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Dịch manga trên trang web bằng ứng dụng Koharu tích hợp và API do bạn chọn.",
   "permissions": ["storage", "activeTab", "unlimitedStorage", "nativeMessaging"],
   "host_permissions": ["<all_urls>"],

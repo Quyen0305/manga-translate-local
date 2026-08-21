@@ -53,9 +53,11 @@ fn run_loop(
     let service_status = MenuItem::new("Service: starting", false, None);
     let engine_status = MenuItem::new("Engine: sleeping", false, None);
     let resource_status = MenuItem::new("RAM: checking", false, None);
+    let recovery_status = MenuItem::new("Recovery: ready", false, None);
     let toggle_service = MenuItem::new("Stop Service", true, None);
     let unload_engine = MenuItem::new("Unload Engine", false, None);
     let restart_engine = MenuItem::new("Restart Engine", true, None);
+    let retry_gpu = MenuItem::new("Retry GPU", false, None);
     let preload_engine = CheckMenuItem::new(
         "Preload Engine at Startup",
         true,
@@ -71,10 +73,12 @@ fn run_loop(
     menu.append(&service_status)?;
     menu.append(&engine_status)?;
     menu.append(&resource_status)?;
+    menu.append(&recovery_status)?;
     menu.append(&PredefinedMenuItem::separator())?;
     menu.append(&toggle_service)?;
     menu.append(&unload_engine)?;
     menu.append(&restart_engine)?;
+    menu.append(&retry_gpu)?;
     menu.append(&preload_engine)?;
     menu.append(&open_data)?;
     menu.append(&open_logs)?;
@@ -120,6 +124,8 @@ fn run_loop(
                 }
             } else if event.id == *restart_engine.id() {
                 controller.restart_engine();
+            } else if event.id == *retry_gpu.id() {
+                controller.retry_gpu();
             } else if event.id == *unload_engine.id() {
                 if let Err(error) = controller.unload_engine() {
                     tracing::error!(%error, "could not unload engine");
@@ -153,8 +159,10 @@ fn run_loop(
         }
 
         if last_refresh.elapsed() >= Duration::from_millis(500) {
+            controller.recover_if_needed();
             let running = controller.is_running();
             let diagnostics = controller.engine_diagnostics();
+            let service = controller.service_diagnostics();
             let engine_ready = diagnostics.loaded;
             service_status.set_text(if running {
                 "Service: running"
@@ -174,6 +182,14 @@ fn run_loop(
                 .map(|vram| format!("RAM: {ram} | VRAM: {}", format_bytes(vram)))
                 .unwrap_or_else(|| format!("RAM: {ram}"));
             resource_status.set_text(&resource_text);
+            let recovery_text = if diagnostics.recovery.retry_gpu_available {
+                "Recovery: CPU fallback"
+            } else if service.restart_count > 0 {
+                "Recovery: service restarted"
+            } else {
+                "Recovery: ready"
+            };
+            recovery_status.set_text(recovery_text);
             toggle_service.set_text(if running {
                 "Stop Service"
             } else {
@@ -182,6 +198,12 @@ fn run_loop(
             unload_engine
                 .set_enabled(running && engine_ready && !diagnostics.busy && !diagnostics.loading);
             restart_engine.set_enabled(running && !diagnostics.busy && !diagnostics.loading);
+            retry_gpu.set_enabled(
+                running
+                    && diagnostics.recovery.retry_gpu_available
+                    && !diagnostics.busy
+                    && !diagnostics.loading,
+            );
             preload_engine.set_checked(controller.lifecycle_policy().preload_on_start);
             startup.set_checked(native::startup_enabled());
             let _ = tray.set_tooltip(Some(if running {

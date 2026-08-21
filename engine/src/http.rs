@@ -57,6 +57,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/engine/unload", post(unload_engine))
         .route("/api/v1/engine/preload", post(preload_engine))
         .route("/api/v1/engine/restart", post(restart_engine))
+        .route("/api/v1/engine/retry-gpu", post(retry_gpu))
         .route("/api/v1/engine/policy", post(update_engine_policy))
         .route("/api/v1/storage/cleanup", post(cleanup_storage))
         .route("/api/v1/models", post(models))
@@ -121,6 +122,7 @@ async fn diagnostics(State(state): State<Arc<AppState>>) -> Response {
         StatusCode::OK,
         axum::Json(DiagnosticsResponse {
             engine: state.engine.diagnostics(),
+            service: state.service.diagnostics(),
             cuda,
             storage,
         }),
@@ -155,6 +157,31 @@ async fn restart_engine(State(state): State<Arc<AppState>>) -> Response {
     match state.engine.restart().await {
         Ok(()) => lifecycle_response(&state, "restarted"),
         Err(error) => lifecycle_error(error, request_id),
+    }
+}
+
+async fn retry_gpu(State(state): State<Arc<AppState>>) -> Response {
+    let request_id = Uuid::new_v4();
+    match state.engine.retry_gpu().await {
+        Ok(restored) => lifecycle_response(
+            &state,
+            if restored {
+                "gpu-restored"
+            } else {
+                "gpu-already-active"
+            },
+        ),
+        Err(error) if error.to_string().contains("CPU-only mode") => {
+            AppError::validation("Engine được khởi động ở chế độ chỉ CPU").response(request_id)
+        }
+        Err(error) if error.to_string().contains("engine is busy") => {
+            AppError::conflict("Engine đang xử lý ảnh; hãy thử lại GPU sau").response(request_id)
+        }
+        Err(error) => AppError::engine_code(
+            "GPU_RETRY_FAILED",
+            format!("Không khôi phục được GPU: {error:#}. Engine vẫn giữ CPU fallback."),
+        )
+        .response(request_id),
     }
 }
 
@@ -439,6 +466,7 @@ struct ModelsResponse {
 #[serde(rename_all = "camelCase")]
 struct DiagnosticsResponse {
     engine: crate::engine::EngineDiagnostics,
+    service: crate::service::ServiceDiagnostics,
     cuda: CudaDiagnostics,
     storage: StorageDiagnostics,
 }

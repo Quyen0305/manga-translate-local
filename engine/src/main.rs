@@ -18,7 +18,7 @@ use clap::Parser;
 use config::AppConfig;
 use engine::Engine;
 use models::ModelDiscovery;
-use service::{AppState, ServiceController};
+use service::{AppState, ServiceController, ServiceHealth};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Manga Translate desktop service powered by Koharu")]
@@ -60,6 +60,7 @@ fn main() -> Result<()> {
     let state = Arc::new(AppState {
         engine: Arc::new(Engine::new(config.clone())),
         models: ModelDiscovery::new()?,
+        service: Arc::new(ServiceHealth::default()),
         config: config.clone(),
     });
 
@@ -77,12 +78,14 @@ fn main() -> Result<()> {
 }
 
 fn run_service(state: Arc<AppState>) -> Result<()> {
+    state.service.prepare_standalone_start();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .thread_stack_size(64 * 1024 * 1024)
         .enable_all()
         .build()?;
     runtime.block_on(async move {
         let listener = tokio::net::TcpListener::bind(state.config.socket_addr()).await?;
+        state.service.mark_standalone_running();
         tracing::info!(url = %format!("http://{}", state.config.socket_addr()), "service started");
         let lifecycle = service::spawn_lifecycle_monitor(state.engine.clone());
         axum::serve(listener, http::router(state))

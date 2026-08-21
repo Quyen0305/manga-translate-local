@@ -174,7 +174,7 @@ async function getEngineStatus() {
 }
 
 async function engineAction(action) {
-  if (!["unload", "preload", "restart"].includes(action)) {
+  if (!["unload", "preload", "restart", "retry-gpu"].includes(action)) {
     throw new Error("Thao tác engine không hợp lệ");
   }
   const response = await serviceFetch(`/api/v1/engine/${action}`, { method: "POST" });

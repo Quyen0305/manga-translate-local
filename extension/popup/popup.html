@@ -83,6 +83,8 @@
       <div class="system-content" aria-live="polite">
         <dl class="system-grid">
           <dt>Trạng thái</dt><dd id="lifecycle-state">-</dd>
+          <dt>Service</dt><dd id="service-recovery">-</dd>
+          <dt>Recovery</dt><dd id="recovery-state">-</dd>
           <dt>Chế độ</dt><dd id="compute-mode">-</dd>
           <dt>RAM tiến trình</dt><dd id="process-memory">-</dd>
           <dt>VRAM tiến trình</dt><dd id="gpu-memory">-</dd>
@@ -96,6 +98,7 @@
         </dl>
         <p id="cuda-message" class="system-message"></p>
         <p id="runtime-message" class="system-message"></p>
+        <p id="recovery-message" class="system-message"></p>
         <p id="data-directory" class="data-directory"></p>
         <div class="lifecycle-policy">
           <label>Tự giải phóng
@@ -113,6 +116,7 @@
           <button id="load-engine" class="secondary" type="button">Nạp engine</button>
           <button id="unload-engine" class="secondary" type="button">Giải phóng</button>
           <button id="restart-engine" class="secondary" type="button">Khởi động lại</button>
+          <button id="retry-gpu" class="secondary" type="button">Thử lại GPU</button>
         </div>
         <div class="storage-manager">
           <strong>Quản lý kho engine</strong>

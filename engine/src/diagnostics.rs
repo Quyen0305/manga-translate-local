@@ -148,6 +148,7 @@ pub struct RuntimeComponent {
     pub status: &'static str,
     pub bytes: u64,
     pub optional: bool,
+    pub message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -405,14 +406,79 @@ fn runtime_component(
     label: &'static str,
     optional: bool,
 ) -> Result<RuntimeComponent> {
-    let bytes = optional_directory_bytes(&root.join(id))?;
+    let directory = root.join(id);
+    let bytes = optional_directory_bytes(&directory)?;
+    let issue = (bytes > 0)
+        .then(|| runtime_component_issue(id, &directory))
+        .flatten();
     Ok(RuntimeComponent {
         id,
         label,
-        status: if bytes > 0 { "ready" } else { "missing" },
+        status: if bytes == 0 {
+            "missing"
+        } else if issue.is_some() {
+            "invalid"
+        } else {
+            "ready"
+        },
         bytes,
         optional,
+        message: issue,
     })
+}
+
+fn runtime_component_issue(id: &str, directory: &Path) -> Option<String> {
+    let required: &[&[&str]] = match id {
+        "torch" => &[&["torch_cpu.dll", "libtorch_cpu.so", "libtorch_cpu.dylib"]],
+        "cuda" => &[&["cudart64_13.dll", "libcudart.so"]],
+        "llama" => &[
+            &["llama.dll", "libllama.so", "libllama.dylib"],
+            &["mtmd.dll", "libmtmd.so", "libmtmd.dylib"],
+        ],
+        "diffusion" => &[&[
+            "stable-diffusion.dll",
+            "libstable-diffusion.so",
+            "libstable-diffusion.dylib",
+        ]],
+        "hugging-face" => &[
+            &["model.safetensors"],
+            &["lama-manga.safetensors"],
+            &["PaddleOCR-VL-1.6-GGUF.gguf"],
+            &["PaddleOCR-VL-1.6-GGUF-mmproj.gguf"],
+        ],
+        _ => &[],
+    };
+    let names = directory_file_names(directory).ok()?;
+    let missing = required
+        .iter()
+        .filter(|alternatives| {
+            !alternatives
+                .iter()
+                .any(|name| names.contains(&name.to_ascii_lowercase()))
+        })
+        .map(|alternatives| alternatives[0])
+        .collect::<Vec<_>>();
+    (!missing.is_empty()).then(|| format!("Thiếu file bắt buộc: {}", missing.join(", ")))
+}
+
+fn directory_file_names(path: &Path) -> Result<HashSet<String>> {
+    let mut names = HashSet::new();
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(directory) = stack.pop() {
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                stack.push(entry.path());
+            } else if file_type.is_file() {
+                names.insert(entry.file_name().to_string_lossy().to_ascii_lowercase());
+            }
+        }
+    }
+    Ok(names)
 }
 
 fn optional_directory_bytes(path: &Path) -> Result<u64> {
@@ -630,10 +696,24 @@ mod tests {
         let project = temp.path().join("projects").join("keep.txt");
         std::fs::create_dir_all(&models).expect("models directory");
         std::fs::create_dir_all(&downloads).expect("downloads directory");
-        for component in ["torch", "llama", "diffusion", "hugging-face"] {
+        for (component, filename) in [
+            ("torch", "torch_cpu.dll"),
+            ("llama", "llama.dll"),
+            ("diffusion", "stable-diffusion.dll"),
+            ("hugging-face", "model.safetensors"),
+        ] {
             let directory = active.join(component);
             std::fs::create_dir_all(&directory).expect("runtime component");
-            std::fs::write(directory.join("ready.bin"), [1u8]).expect("runtime file");
+            std::fs::write(directory.join(filename), [1u8]).expect("runtime file");
+        }
+        std::fs::write(active.join("llama/mtmd.dll"), [1u8]).expect("mtmd runtime");
+        for filename in [
+            "lama-manga.safetensors",
+            "PaddleOCR-VL-1.6-GGUF.gguf",
+            "PaddleOCR-VL-1.6-GGUF-mmproj.gguf",
+        ] {
+            std::fs::write(active.join("hugging-face").join(filename), [1u8])
+                .expect("pipeline model");
         }
         std::fs::create_dir_all(project.parent().unwrap()).expect("projects directory");
         std::fs::write(models.join("model.bin"), vec![1u8; 12]).expect("model");
@@ -668,5 +748,46 @@ mod tests {
         assert!(ready.exists());
         assert!(!staging.exists());
         assert!(cleanup_storage(temp.path(), "projects").is_err());
+    }
+
+    #[test]
+    fn runtime_health_detects_a_missing_required_dll() {
+        let temp = tempfile::tempdir().expect("temp data directory");
+        let active = temp.path().join(ACTIVE_RUNTIME_DIRECTORY);
+        for (component, files) in [
+            ("torch", vec!["torch_cpu.dll"]),
+            ("llama", vec!["llama.dll"]),
+            ("diffusion", vec!["stable-diffusion.dll"]),
+            (
+                "hugging-face",
+                vec![
+                    "model.safetensors",
+                    "lama-manga.safetensors",
+                    "PaddleOCR-VL-1.6-GGUF.gguf",
+                    "PaddleOCR-VL-1.6-GGUF-mmproj.gguf",
+                ],
+            ),
+        ] {
+            let directory = active.join(component);
+            std::fs::create_dir_all(&directory).expect("runtime component");
+            for file in files {
+                std::fs::write(directory.join(file), [1u8]).expect("runtime artifact");
+            }
+        }
+
+        let runtime = RuntimeHealth::scan(temp.path()).expect("runtime health");
+        assert_eq!(runtime.status, "incomplete");
+        let llama = runtime
+            .components
+            .iter()
+            .find(|component| component.id == "llama")
+            .expect("llama diagnostics");
+        assert_eq!(llama.status, "invalid");
+        assert!(
+            llama
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("mtmd.dll"))
+        );
     }
 }

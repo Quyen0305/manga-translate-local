@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use tokio::sync::oneshot;
@@ -12,6 +12,100 @@ pub struct AppState {
     pub config: AppConfig,
     pub engine: Arc<Engine>,
     pub models: ModelDiscovery,
+    pub service: Arc<ServiceHealth>,
+}
+
+#[derive(Default)]
+pub struct ServiceHealth {
+    desired_running: AtomicBool,
+    running: AtomicBool,
+    restart_count: AtomicU64,
+    consecutive_failures: AtomicU64,
+    last_restart_epoch_seconds: AtomicU64,
+    last_failure: RwLock<Option<String>>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceDiagnostics {
+    pub status: &'static str,
+    pub desired_running: bool,
+    pub restart_count: u64,
+    pub consecutive_failures: u64,
+    pub last_restart_epoch_seconds: Option<u64>,
+    pub last_failure: Option<String>,
+}
+
+impl ServiceHealth {
+    pub fn prepare_standalone_start(&self) {
+        self.prepare_manual_start();
+    }
+
+    pub fn mark_standalone_running(&self) {
+        self.record_started();
+    }
+
+    pub fn diagnostics(&self) -> ServiceDiagnostics {
+        let running = self.running.load(Ordering::Acquire);
+        let desired = self.desired_running.load(Ordering::Acquire);
+        let last_restart = self.last_restart_epoch_seconds.load(Ordering::Acquire);
+        ServiceDiagnostics {
+            status: if running {
+                "running"
+            } else if desired {
+                "recovering"
+            } else {
+                "stopped"
+            },
+            desired_running: desired,
+            restart_count: self.restart_count.load(Ordering::Acquire),
+            consecutive_failures: self.consecutive_failures.load(Ordering::Acquire),
+            last_restart_epoch_seconds: (last_restart > 0).then_some(last_restart),
+            last_failure: self
+                .last_failure
+                .read()
+                .ok()
+                .and_then(|failure| failure.clone()),
+        }
+    }
+
+    fn prepare_manual_start(&self) {
+        self.desired_running.store(true, Ordering::Release);
+        self.consecutive_failures.store(0, Ordering::Release);
+    }
+
+    fn record_started(&self) {
+        self.running.store(true, Ordering::Release);
+        self.consecutive_failures.store(0, Ordering::Release);
+    }
+
+    fn record_failure(&self, error: impl Into<String>) {
+        self.running.store(false, Ordering::Release);
+        self.consecutive_failures.fetch_add(1, Ordering::AcqRel);
+        if let Ok(mut failure) = self.last_failure.write() {
+            *failure = Some(error.into().chars().take(800).collect());
+        }
+    }
+
+    fn record_restart_attempt(&self) {
+        self.restart_count.fetch_add(1, Ordering::AcqRel);
+        self.last_restart_epoch_seconds
+            .store(epoch_seconds(), Ordering::Release);
+    }
+
+    fn stop_requested(&self) {
+        self.desired_running.store(false, Ordering::Release);
+        self.running.store(false, Ordering::Release);
+    }
+
+    fn should_recover(&self) -> bool {
+        self.desired_running.load(Ordering::Acquire)
+            && !self.running.load(Ordering::Acquire)
+            && self.consecutive_failures.load(Ordering::Acquire) < 3
+            && epoch_seconds()
+                .saturating_sub(self.last_restart_epoch_seconds.load(Ordering::Acquire))
+                >= 2
+    }
 }
 
 struct ServiceHandle {
@@ -22,7 +116,6 @@ struct ServiceHandle {
 pub struct ServiceController {
     state: Arc<AppState>,
     handle: Mutex<Option<ServiceHandle>>,
-    running: Arc<AtomicBool>,
 }
 
 impl ServiceController {
@@ -30,11 +123,15 @@ impl ServiceController {
         Arc::new(Self {
             state,
             handle: Mutex::new(None),
-            running: Arc::new(AtomicBool::new(false)),
         })
     }
 
     pub fn start(&self) {
+        self.state.service.prepare_manual_start();
+        self.start_internal(false);
+    }
+
+    fn start_internal(&self, recovery: bool) {
         let mut handle = match self.handle.lock() {
             Ok(handle) => handle,
             Err(_) => return,
@@ -50,7 +147,9 @@ impl ServiceController {
             return;
         }
         let state = self.state.clone();
-        let running = self.running.clone();
+        if recovery {
+            state.service.record_restart_attempt();
+        }
         let (shutdown, receiver) = oneshot::channel();
         let thread = std::thread::Builder::new()
             .name("manga-http".into())
@@ -62,6 +161,9 @@ impl ServiceController {
                     .enable_all()
                     .build();
                 let Ok(runtime) = runtime else {
+                    state
+                        .service
+                        .record_failure("Không tạo được Tokio runtime cho local service");
                     tracing::error!("could not create HTTP runtime");
                     return;
                 };
@@ -69,38 +171,51 @@ impl ServiceController {
                     let listener = match tokio::net::TcpListener::bind(state.config.socket_addr()).await {
                         Ok(listener) => listener,
                         Err(error) => {
+                            state.service.record_failure(format!(
+                                "Không bind được {}: {error}",
+                                state.config.socket_addr()
+                            ));
                             tracing::error!(%error, address = %state.config.socket_addr(), "could not bind service");
                             return;
                         }
                     };
-                    running.store(true, Ordering::Release);
+                    state.service.record_started();
                     tracing::info!(address = %state.config.socket_addr(), "service started");
                     let lifecycle = spawn_lifecycle_monitor(state.engine.clone());
-                    let result = axum::serve(listener, crate::http::router(state))
+                    let result = axum::serve(listener, crate::http::router(state.clone()))
                         .with_graceful_shutdown(async {
                             let _ = receiver.await;
                         })
                         .await;
                     lifecycle.abort();
-                    running.store(false, Ordering::Release);
                     if let Err(error) = result {
+                        state
+                            .service
+                            .record_failure(format!("Local HTTP service stopped: {error}"));
                         tracing::error!(%error, "HTTP service stopped with an error");
+                    } else {
+                        state.service.running.store(false, Ordering::Release);
                     }
                 });
             });
         match thread {
             Ok(thread) => *handle = Some(ServiceHandle { shutdown, thread }),
-            Err(error) => tracing::error!(%error, "could not start service thread"),
+            Err(error) => {
+                self.state
+                    .service
+                    .record_failure(format!("Không tạo được service thread: {error}"));
+                tracing::error!(%error, "could not start service thread");
+            }
         }
     }
 
     pub fn stop(&self) {
+        self.state.service.stop_requested();
         let current = self.handle.lock().ok().and_then(|mut handle| handle.take());
         if let Some(handle) = current {
             let _ = handle.shutdown.send(());
             let _ = handle.thread.join();
         }
-        self.running.store(false, Ordering::Release);
         self.state.engine.unload("service-stop");
     }
 
@@ -108,6 +223,14 @@ impl ServiceController {
         spawn_engine_operation(self.state.engine.clone(), "restart", |engine| async move {
             engine.restart().await
         });
+    }
+
+    pub fn retry_gpu(&self) {
+        spawn_engine_operation(
+            self.state.engine.clone(),
+            "retry-gpu",
+            |engine| async move { engine.retry_gpu().await.map(|_| ()) },
+        );
     }
 
     pub fn unload_engine(&self) -> anyhow::Result<bool> {
@@ -127,7 +250,28 @@ impl ServiceController {
     }
 
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::Acquire)
+        self.state.service.running.load(Ordering::Acquire)
+    }
+
+    pub fn recover_if_needed(&self) -> bool {
+        if !self.state.service.should_recover() {
+            return false;
+        }
+        let finished = self
+            .handle
+            .lock()
+            .ok()
+            .is_none_or(|handle| handle.as_ref().is_none_or(|item| item.thread.is_finished()));
+        if !finished {
+            return false;
+        }
+        tracing::warn!("local service stopped unexpectedly; watchdog is restarting it");
+        self.start_internal(true);
+        true
+    }
+
+    pub fn service_diagnostics(&self) -> ServiceDiagnostics {
+        self.state.service.diagnostics()
     }
 }
 
@@ -185,6 +329,12 @@ impl Drop for ServiceController {
     }
 }
 
+fn epoch_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr};
@@ -208,6 +358,7 @@ mod tests {
         let state = Arc::new(AppState {
             engine: Arc::new(Engine::new(config.clone())),
             models: ModelDiscovery::new().expect("model discovery"),
+            service: Arc::new(ServiceHealth::default()),
             config,
         });
         let controller = ServiceController::new(state);
@@ -222,6 +373,23 @@ mod tests {
         wait_until(|| controller.is_running());
         controller.stop();
         assert!(!controller.is_running());
+    }
+
+    #[test]
+    fn watchdog_retries_unexpected_failures_but_respects_manual_stop() {
+        let health = ServiceHealth::default();
+        health.prepare_manual_start();
+        health.record_failure("simulated service crash");
+        assert!(health.should_recover());
+
+        health.stop_requested();
+        assert!(!health.should_recover());
+
+        health.prepare_manual_start();
+        for _ in 0..3 {
+            health.record_failure("repeated bind failure");
+        }
+        assert!(!health.should_recover());
     }
 
     fn wait_until(condition: impl Fn() -> bool) {

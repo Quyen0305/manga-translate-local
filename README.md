@@ -2,7 +2,7 @@
 
 Chrome extension dịch manga trực tiếp trên trang web bằng một ứng dụng Windows hợp nhất được xây dựng từ mã nguồn Koharu `0.70.2`.
 
-Từ phiên bản `0.8.0`, toàn bộ local HTTP API, model discovery, kiểm tra provider, hàng đợi dịch, pipeline Koharu, Native Messaging và biểu tượng khay hệ thống nằm trong một file. Phiên bản `0.10.0` chuyển engine sang pipeline scene-native của Koharu `0.70.2`; phiên bản `0.11.0` bổ sung quản lý vòng đời engine; phiên bản `0.12.0` bổ sung kiểm tra runtime và quản lý dữ liệu Koharu cũ:
+Từ phiên bản `0.8.0`, toàn bộ local HTTP API, model discovery, kiểm tra provider, hàng đợi dịch, pipeline Koharu, Native Messaging và biểu tượng khay hệ thống nằm trong một file. Phiên bản `0.10.0` chuyển engine sang pipeline scene-native của Koharu `0.70.2`; phiên bản `0.11.0` bổ sung quản lý vòng đời engine; phiên bản `0.12.0` bổ sung kiểm tra runtime và quản lý dữ liệu Koharu cũ; phiên bản `0.13.0` bổ sung Recovery cho GPU, DLL và local service:
 
 ```text
 MangaTranslate.exe
@@ -25,6 +25,8 @@ MangaTranslate.exe
 - Theo dõi trạng thái `sleeping/loading/ready/busy`, RAM/VRAM và tự giải phóng model sau thời gian không hoạt động.
 - Kiểm tra từng thành phần runtime `0.70.2`, phát hiện gói cài dở và tách riêng dung lượng active/legacy.
 - Dọn cache, runtime hoặc model Koharu cũ theo whitelist; không xóa project hay runtime active.
+- Tự fallback CPU khi CUDA lỗi, cho phép thử lại GPU và phân loại DLL thiếu/không tương thích.
+- Watchdog tự khởi động lại local service sau lỗi ngoài ý muốn nhưng tôn trọng lệnh dừng thủ công.
 
 ## Kiến trúc
 
@@ -124,6 +126,7 @@ Menu chuột phải của biểu tượng tray gồm:
 - RAM/VRAM hiện tại của tiến trình.
 - Bật/tắt local service.
 - Nạp, giải phóng hoặc khởi động lại engine mà không tắt tray.
+- Thử lại GPU sau khi engine đã chuyển sang CPU fallback.
 - Bật/tắt nạp sẵn lõi engine khi khởi động ứng dụng.
 - Mở thư mục model/runtime đang được sử dụng.
 - Mở thư mục log.
@@ -203,13 +206,15 @@ Kết quả bình thường:
   "mode": "unified",
   "engine": "sleeping",
   "engineSource": "koharu-0.70.2",
-  "version": "0.12.0"
+  "version": "0.13.0"
 }
 ```
 
 Log nằm tại `%LOCALAPPDATA%\MangaTranslate\logs\manga-translate.log`.
 
-Popup **Engine & dung lượng** hiển thị lifecycle, RAM, VRAM, GPU, driver, CUDA runtime, chế độ GPU/CPU fallback, đường dẫn dữ liệu và sức khỏe runtime active. Policy lifecycle được lưu tại `%LOCALAPPDATA%\MangaTranslate\lifecycle.json`. Trình quản lý kho phân loại `runtime-v0.70.2` đang dùng, gói cài dở, runtime/model cũ và cache ứng dụng cũ. Những nhóm legacy cần xác nhận trước khi xóa; thư mục `projects`, cấu hình và runtime active không thuộc bất kỳ mục cleanup nào. Cleanup legacy cũng bị từ chối nếu Koharu desktop còn chạy. Các thao tác unload/restart và dọn dữ liệu bị từ chối khi engine đang xử lý hoặc nạp model.
+Popup **Engine & dung lượng** hiển thị lifecycle, RAM, VRAM, GPU, driver, CUDA runtime, chế độ GPU/CPU fallback, trạng thái Recovery, đường dẫn dữ liệu và sức khỏe runtime active. Policy lifecycle được lưu tại `%LOCALAPPDATA%\MangaTranslate\lifecycle.json`. Trình quản lý kho phân loại `runtime-v0.70.2` đang dùng, gói cài dở, runtime/model cũ và cache ứng dụng cũ. Những nhóm legacy cần xác nhận trước khi xóa; thư mục `projects`, cấu hình và runtime active không thuộc bất kỳ mục cleanup nào. Cleanup legacy cũng bị từ chối nếu Koharu desktop còn chạy. Các thao tác unload/restart, thử lại GPU và dọn dữ liệu bị từ chối khi engine đang xử lý hoặc nạp model.
+
+Recovery ghi lại mã lỗi engine và hành động gần nhất trong diagnostics. Lỗi CUDA/PTX kích hoạt CPU fallback; sau khi cập nhật driver hoặc runtime, nút **Thử lại GPU** sẽ giải phóng engine CPU và khởi tạo lại GPU. Kiểm tra runtime xác nhận các DLL/model bắt buộc thay vì chỉ dựa vào dung lượng thư mục. Nếu HTTP service dừng ngoài ý muốn, tray thử khởi động lại tối đa ba lần cho một chuỗi lỗi; chọn **Stop Service** sẽ tắt watchdog cho đến khi người dùng hoặc Native Messaging bật service lại. Cache bản dịch nằm trong IndexedDB của extension nên không bị xóa khi unload, restart engine hoặc phục hồi service.
 
 ## Xử lý sự cố
 
@@ -232,6 +237,10 @@ Có thể dùng `--cpu` hoặc `ENGINE_CPU=true` để chạy tạm bằng CPU.
 ### Service chạy nhưng engine là `sleeping`
 
 Đây không phải lỗi. Engine chỉ tải model khi bắt đầu dịch ảnh đầu tiên.
+
+### Engine đang dùng CPU fallback
+
+Mở **Engine & dung lượng** để xem mã lỗi gần nhất. Sau khi cập nhật driver hoặc sửa runtime, bấm **Thử lại GPU**. Nếu GPU vẫn lỗi, engine giữ CPU fallback và cache bản dịch hiện có không bị thay đổi.
 
 ### Đổi model nhưng vẫn thấy bản dịch cũ
 

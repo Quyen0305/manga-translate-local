@@ -51,7 +51,7 @@ details > label { margin-top: 10px; }
 .lifecycle-policy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 8px; margin-top: 10px; }
 .lifecycle-policy .toggle { min-width: 0; height: 35px; font-size: 10px; font-weight: 700; line-height: 1.2; }
 .lifecycle-policy .toggle span { flex: none; }
-.engine-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+.engine-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
 .engine-actions button { min-width: 0; padding: 0 6px; font-size: 10px; line-height: 1.15; }
 .engine-actions button:disabled { color: #9da2aa; cursor: default; }
 .storage-manager { margin-top: 11px; padding-top: 10px; border-top: 1px solid #dfe2e6; }

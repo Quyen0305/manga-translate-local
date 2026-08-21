@@ -48,10 +48,28 @@ export function runtimeStatusLabel(runtime = {}) {
 
 export function runtimeIssueLabel(runtime = {}) {
   if (runtime.status === "attention") return "Phát hiện gói cài đặt chưa hoàn tất.";
-  const missing = (runtime.components || [])
+  const invalid = (runtime.components || [])
     .filter((component) => !component.optional && component.status !== "ready")
-    .map((component) => component.label);
-  if (missing.length) return `Thiếu: ${missing.join(", ")}.`;
+    .map((component) => component.message ? `${component.label}: ${component.message}` : component.label);
+  if (invalid.length) return `Runtime cần xử lý: ${invalid.join("; ")}.`;
   if (runtime.status === "ready") return "Các thành phần bắt buộc đã sẵn sàng.";
   return "Runtime sẽ được tải khi nạp engine lần đầu.";
+}
+
+export function recoveryStatusLabel(engine = {}, service = {}) {
+  if (engine.recovery?.retryGpuAvailable) return "CPU fallback";
+  if (service.status === "recovering") return "Đang phục hồi service";
+  if (Number(service.restartCount || 0) > 0) return `Đã phục hồi ${service.restartCount} lần`;
+  if (engine.recovery?.lastAction === "gpu-restored") return "GPU đã phục hồi";
+  return "Sẵn sàng";
+}
+
+export function recoveryIssueLabel(engine = {}, service = {}) {
+  if (engine.recovery?.retryGpuAvailable) {
+    return engine.fallbackReason || "Engine đang dùng CPU fallback; có thể thử lại GPU sau khi sửa driver/runtime.";
+  }
+  if (service.lastFailure) return `Service gần nhất: ${service.lastFailure}`;
+  const recovery = engine.recovery || {};
+  if (recovery.lastErrorCode) return `Lỗi gần nhất: ${recovery.lastErrorCode}.`;
+  return "Watchdog service và cơ chế fallback đang hoạt động.";
 }

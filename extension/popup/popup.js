@@ -5,6 +5,8 @@ import {
   engineStateLabel,
   formatBytes,
   formatDuration,
+  recoveryIssueLabel,
+  recoveryStatusLabel,
   runtimeIssueLabel,
   runtimeStatusLabel,
 } from "../diagnostics-utils.js";
@@ -66,6 +68,7 @@ document.querySelector("#cleanup-list").addEventListener("click", handleCleanupC
 document.querySelector("#load-engine").addEventListener("click", () => runEngineAction("preload"));
 document.querySelector("#unload-engine").addEventListener("click", () => runEngineAction("unload"));
 document.querySelector("#restart-engine").addEventListener("click", () => runEngineAction("restart"));
+document.querySelector("#retry-gpu").addEventListener("click", () => runEngineAction("retry-gpu"));
 document.querySelector("#idle-timeout").addEventListener("change", saveEnginePolicy);
 document.querySelector("#preload-engine").addEventListener("change", saveEnginePolicy);
 fields.provider.addEventListener("change", () => {
@@ -358,6 +361,7 @@ async function updateDiagnostics() {
     summary.textContent = "Không đọc được";
     document.querySelector("#cuda-message").textContent = error.message || "Không đọc được diagnostics.";
     document.querySelector("#runtime-message").textContent = "";
+    document.querySelector("#recovery-message").textContent = "";
     cleanupCandidates = [];
     document.querySelector("#cleanup-list").replaceChildren();
     document.querySelector("#cleanup-empty").hidden = false;
@@ -368,11 +372,16 @@ async function updateDiagnostics() {
 }
 
 function renderDiagnostics(data) {
-  const { engine = {}, cuda = {}, storage = {} } = data || {};
+  const { engine = {}, service = {}, cuda = {}, storage = {} } = data || {};
   const mode = computeModeLabel(engine);
   document.querySelector("#system-summary").textContent = `${engineStateLabel(engine)} · ${formatBytes(storage.totalBytes)}`;
   document.querySelector("#compute-mode").textContent = engine.busy ? `${mode} · đang xử lý` : mode;
   renderEngineLifecycle(engine);
+  document.querySelector("#service-recovery").textContent = service.status === "running"
+    ? "Đang chạy"
+    : service.status === "recovering" ? "Đang tự khởi động lại" : "Đã dừng";
+  document.querySelector("#recovery-state").textContent = recoveryStatusLabel(engine, service);
+  document.querySelector("#recovery-message").textContent = recoveryIssueLabel(engine, service);
   const cudaStatus = document.querySelector("#cuda-status");
   cudaStatus.dataset.state = cuda.status || "unavailable";
   cudaStatus.textContent = cudaStatusLabel(cuda);
@@ -440,6 +449,7 @@ function renderEngineLifecycle(engine) {
   document.querySelector("#load-engine").disabled = busy || Boolean(engine.loaded);
   document.querySelector("#unload-engine").disabled = busy || !engine.loaded;
   document.querySelector("#restart-engine").disabled = busy;
+  document.querySelector("#retry-gpu").disabled = busy || !engine.recovery?.retryGpuAvailable;
 }
 
 async function runEngineAction(action) {
@@ -449,13 +459,16 @@ async function runEngineAction(action) {
     preload: "Đang nạp engine…",
     unload: "Đang giải phóng engine…",
     restart: "Đang khởi động lại engine…",
+    "retry-gpu": "Đang thử khôi phục GPU…",
   };
   showMessage(labels[action]);
   try {
     const result = await chrome.runtime.sendMessage({ type: "ENGINE_ACTION", payload: { action } });
     if (!result?.ok) throw new Error(result?.error || "Không điều khiển được engine");
     renderEngineLifecycle(result.data.engine || {});
-    showMessage(action === "unload" ? "Engine đã được giải phóng." : "Engine đã sẵn sàng.");
+    showMessage(action === "unload"
+      ? "Engine đã được giải phóng."
+      : action === "retry-gpu" ? "GPU đã được khôi phục." : "Engine đã sẵn sàng.");
     await checkEngine();
   } catch (error) {
     showMessage(error.message || "Không điều khiển được engine.", true);
