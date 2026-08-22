@@ -1,5 +1,7 @@
 # Manga Translate Local
 
+[English README](README.en.md)
+
 Chrome extension dịch manga trực tiếp trên trang web bằng một ứng dụng Windows hợp nhất được xây dựng từ mã nguồn Koharu `0.70.2`.
 
 Từ phiên bản `0.8.0`, toàn bộ local HTTP API, model discovery, kiểm tra provider, hàng đợi dịch, pipeline Koharu, Native Messaging và biểu tượng khay hệ thống nằm trong một file. Phiên bản `0.10.0` chuyển engine sang pipeline scene-native của Koharu `0.70.2`; phiên bản `0.11.0` bổ sung quản lý vòng đời engine; phiên bản `0.12.0` bổ sung kiểm tra runtime và quản lý dữ liệu Koharu cũ; phiên bản `0.13.0` bổ sung Recovery cho GPU, DLL và local service; phiên bản `0.14.0` bổ sung Queue Manager; phiên bản `0.15.0` bổ sung cache nâng cao theo trang và website; phiên bản `0.15.1` bổ sung Visual Context local bằng MiniCPM-V 4.6; phiên bản `0.15.2` tăng trần sinh Visual Context lên 8192 token với cửa sổ 32768 token; phiên bản `0.15.3` liên kết Visual Context với panel, bóng thoại và segment OCR thật của Koharu; phiên bản `0.15.4` ổn định polling/context; phiên bản `0.16.0` bổ sung editor scene-native cho từng bong bóng:
