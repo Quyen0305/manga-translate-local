@@ -2,14 +2,17 @@
 
 mod config;
 mod diagnostics;
+mod editor;
 mod engine;
 mod error;
 mod http;
+mod jobs;
 mod models;
 mod native;
 mod service;
 #[cfg(windows)]
 mod tray;
+mod visual_context;
 
 use std::sync::Arc;
 
@@ -17,6 +20,7 @@ use anyhow::Result;
 use clap::Parser;
 use config::AppConfig;
 use engine::Engine;
+use jobs::JobRegistry;
 use models::ModelDiscovery;
 use service::{AppState, ServiceController, ServiceHealth};
 
@@ -59,6 +63,7 @@ fn main() -> Result<()> {
     let _log_guard = config.init_logging()?;
     let state = Arc::new(AppState {
         engine: Arc::new(Engine::new(config.clone())),
+        jobs: Arc::new(JobRegistry::default()),
         models: ModelDiscovery::new()?,
         service: Arc::new(ServiceHealth::default()),
         config: config.clone(),

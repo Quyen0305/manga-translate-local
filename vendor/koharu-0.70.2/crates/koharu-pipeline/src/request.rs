@@ -68,6 +68,7 @@ pub struct Request {
     pub stop: StopToken,
     pub progress: Option<ProgressSink>,
     pub inpainting_mask: Option<InpaintingMask>,
+    pub translation_instructions: Option<String>,
 }
 
 impl Default for Request {
@@ -78,6 +79,7 @@ impl Default for Request {
             stop: StopToken::default(),
             progress: None,
             inpainting_mask: None,
+            translation_instructions: None,
         }
     }
 }

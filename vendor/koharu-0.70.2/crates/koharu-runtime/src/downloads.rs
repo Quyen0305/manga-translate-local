@@ -119,9 +119,31 @@ impl Transfer {
             && ranged
         {
             self.fetch_parts(id, name, url, destination, total).await
+        } else if let Some(total) = self.probe_range_total(url).await? {
+            self.fetch_parts(id, name, url, destination, total).await
         } else {
             self.fetch_stream(id, name, url, destination, total).await
         }
+    }
+
+    async fn probe_range_total(&self, url: &str) -> Result<Option<u64>> {
+        let response = self
+            .client
+            .get(url)
+            .header(header::RANGE, "bytes=0-0")
+            .header(header::ACCEPT_ENCODING, "identity")
+            .send()
+            .await?;
+        if response.status() != StatusCode::PARTIAL_CONTENT {
+            return Ok(None);
+        }
+        let Some(content_range) = response.headers().get(header::CONTENT_RANGE) else {
+            return Ok(None);
+        };
+        Ok(content_range
+            .to_str()
+            .ok()
+            .and_then(total_from_probe_content_range))
     }
 
     async fn fetch_stream(
@@ -143,15 +165,37 @@ impl Transfer {
         let mut file = tokio::fs::File::create(destination).await?;
         let mut completed = 0;
         let mut body = response.bytes_stream();
-        while let Some(bytes) = body.try_next().await? {
-            file.write_all(&bytes).await?;
-            completed += bytes.len() as u64;
-            publish(Event::Progress {
-                id,
-                name: name.to_owned(),
-                completed,
-                total,
-            });
+        loop {
+            match body.try_next().await {
+                Ok(Some(bytes)) => {
+                    file.write_all(&bytes).await?;
+                    completed += bytes.len() as u64;
+                    publish(Event::Progress {
+                        id,
+                        name: name.to_owned(),
+                        completed,
+                        total,
+                    });
+                    ensure!(
+                        total == 0 || completed <= total,
+                        "{url} returned more than the declared {total} bytes"
+                    );
+                    if stream_is_complete(completed, total) {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(error) if stream_is_complete(completed, total) => {
+                    tracing::warn!(
+                        %error,
+                        completed,
+                        total,
+                        "download stream closed with an error after all declared bytes arrived"
+                    );
+                    break;
+                }
+                Err(error) => return Err(error.into()),
+            }
         }
         file.flush().await?;
         if total > 0 {
@@ -216,6 +260,18 @@ impl Transfer {
         );
         Ok(())
     }
+}
+
+fn stream_is_complete(completed: u64, total: u64) -> bool {
+    total > 0 && completed == total
+}
+
+fn total_from_probe_content_range(value: &str) -> Option<u64> {
+    value
+        .strip_prefix("bytes 0-0/")?
+        .parse::<u64>()
+        .ok()
+        .filter(|total| *total > 0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -310,5 +366,22 @@ mod tests {
         let event = Event::Finished { id: 42 };
         publish(event.clone());
         assert_eq!(receiver.try_recv().unwrap(), event);
+    }
+
+    #[test]
+    fn terminal_stream_error_is_accepted_only_after_all_bytes_arrive() {
+        assert!(stream_is_complete(529_101_504, 529_101_504));
+        assert!(!stream_is_complete(529_101_503, 529_101_504));
+        assert!(!stream_is_complete(0, 0));
+    }
+
+    #[test]
+    fn parses_total_size_from_range_probe() {
+        assert_eq!(
+            total_from_probe_content_range("bytes 0-0/529101504"),
+            Some(529_101_504)
+        );
+        assert_eq!(total_from_probe_content_range("bytes 1-1/10"), None);
+        assert_eq!(total_from_probe_content_range("bytes 0-0/*"), None);
     }
 }

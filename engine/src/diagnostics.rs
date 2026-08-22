@@ -122,6 +122,7 @@ pub struct StorageDiagnostics {
     pub projects_bytes: u64,
     pub webview_bytes: u64,
     pub downloads_bytes: u64,
+    pub visual_context_cache_bytes: u64,
     pub other_bytes: u64,
     pub legacy_bytes: u64,
     pub reclaimable_bytes: u64,
@@ -218,6 +219,10 @@ impl StorageDiagnostics {
                     Some("ebwebview") => {
                         report.webview_bytes = report.webview_bytes.saturating_add(bytes)
                     }
+                    Some("visual-context-cache") => {
+                        report.visual_context_cache_bytes =
+                            report.visual_context_cache_bytes.saturating_add(bytes)
+                    }
                     _ => report.other_bytes = report.other_bytes.saturating_add(bytes),
                 }
             }
@@ -236,7 +241,9 @@ impl StorageDiagnostics {
         let legacy_bytes = legacy_runtime_bytes
             .saturating_add(legacy_models_bytes)
             .saturating_add(legacy_cache_bytes);
-        let reclaimable_bytes = legacy_bytes.saturating_add(active_runtime.staging_bytes);
+        let reclaimable_bytes = legacy_bytes
+            .saturating_add(active_runtime.staging_bytes)
+            .saturating_add(report.visual_context_cache_bytes);
         let mut cleanup_candidates = Vec::new();
         push_cleanup_candidate(
             &mut cleanup_candidates,
@@ -250,6 +257,13 @@ impl StorageDiagnostics {
             "staging",
             "Gói cài đặt dở",
             active_runtime.staging_bytes,
+            false,
+        );
+        push_cleanup_candidate(
+            &mut cleanup_candidates,
+            "visual-context-cache",
+            "Cache ngữ cảnh hình ảnh",
+            report.visual_context_cache_bytes,
             false,
         );
         push_cleanup_candidate(
@@ -326,6 +340,9 @@ pub fn cleanup_storage(data_dir: &Path, target: &str) -> Result<u64> {
     match target {
         "downloads" => cleanup_exact_directory(data_dir, &data_dir.join("runtime/.downloads")),
         "staging" => cleanup_staging(data_dir),
+        "visual-context-cache" => {
+            cleanup_exact_directory(data_dir, &data_dir.join("visual-context-cache"))
+        }
         "legacy-runtime" => cleanup_exact_directory(data_dir, &data_dir.join("runtime")),
         "legacy-models" => cleanup_exact_directory(data_dir, &data_dir.join("models")),
         "legacy-cache" => LEGACY_CACHE_DIRECTORIES
@@ -693,6 +710,7 @@ mod tests {
         let models = temp.path().join("models");
         let downloads = temp.path().join("runtime").join(".downloads");
         let active = temp.path().join(ACTIVE_RUNTIME_DIRECTORY);
+        let visual_context_cache = temp.path().join("visual-context-cache");
         let project = temp.path().join("projects").join("keep.txt");
         std::fs::create_dir_all(&models).expect("models directory");
         std::fs::create_dir_all(&downloads).expect("downloads directory");
@@ -716,13 +734,17 @@ mod tests {
                 .expect("pipeline model");
         }
         std::fs::create_dir_all(project.parent().unwrap()).expect("projects directory");
+        std::fs::create_dir_all(&visual_context_cache).expect("visual context cache directory");
         std::fs::write(models.join("model.bin"), vec![1u8; 12]).expect("model");
         std::fs::write(downloads.join("archive.zip"), vec![1u8; 7]).expect("archive");
         std::fs::write(&project, b"keep").expect("project");
+        std::fs::write(visual_context_cache.join("context.json"), vec![2u8; 11])
+            .expect("visual context cache");
 
         let report = StorageDiagnostics::scan(temp.path()).expect("storage report");
         assert_eq!(report.models_bytes, 12);
         assert_eq!(report.downloads_bytes, 7);
+        assert_eq!(report.visual_context_cache_bytes, 11);
         assert_eq!(report.active_runtime.status, "ready");
         assert_eq!(report.legacy_bytes, 19);
         assert_eq!(
@@ -730,6 +752,11 @@ mod tests {
             7
         );
         assert!(!downloads.exists());
+        assert_eq!(
+            cleanup_storage(temp.path(), "visual-context-cache").expect("context cleanup"),
+            11
+        );
+        assert!(!visual_context_cache.exists());
         assert!(project.exists());
         assert!(active.exists());
     }

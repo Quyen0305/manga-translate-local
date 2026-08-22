@@ -6,11 +6,13 @@ use tokio::sync::oneshot;
 
 use crate::config::{AppConfig, LifecyclePolicy};
 use crate::engine::{Engine, EngineDiagnostics};
+use crate::jobs::JobRegistry;
 use crate::models::ModelDiscovery;
 
 pub struct AppState {
     pub config: AppConfig,
     pub engine: Arc<Engine>,
+    pub jobs: Arc<JobRegistry>,
     pub models: ModelDiscovery,
     pub service: Arc<ServiceHealth>,
 }
@@ -357,6 +359,7 @@ mod tests {
         };
         let state = Arc::new(AppState {
             engine: Arc::new(Engine::new(config.clone())),
+            jobs: Arc::new(JobRegistry::default()),
             models: ModelDiscovery::new().expect("model discovery"),
             service: Arc::new(ServiceHealth::default()),
             config,

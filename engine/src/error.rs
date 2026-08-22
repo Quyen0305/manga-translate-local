@@ -36,6 +36,14 @@ impl AppError {
         Self::new("ENGINE_BUSY", StatusCode::CONFLICT, message)
     }
 
+    pub fn cancelled(message: impl Into<String>) -> Self {
+        Self::new("JOB_CANCELLED", StatusCode::CONFLICT, message)
+    }
+
+    pub fn editor_expired(message: impl Into<String>) -> Self {
+        Self::new("EDITOR_SESSION_EXPIRED", StatusCode::GONE, message)
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::new("INTERNAL_ERROR", StatusCode::INTERNAL_SERVER_ERROR, message)
     }

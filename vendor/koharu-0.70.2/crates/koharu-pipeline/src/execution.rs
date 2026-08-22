@@ -36,6 +36,7 @@ pub(crate) struct Execution<'a> {
     base: koharu_scene::Revision,
     started: Instant,
     inpainting_mask: Option<crate::InpaintingMask>,
+    translation_instructions: Option<String>,
 }
 
 impl<'a> Execution<'a> {
@@ -88,6 +89,7 @@ impl<'a> Execution<'a> {
             base,
             started,
             inpainting_mask: request.inpainting_mask,
+            translation_instructions: request.translation_instructions,
         })
     }
 
@@ -144,6 +146,7 @@ impl<'a> Execution<'a> {
                     .as_ref()
                     .filter(|mask| stage == Stage::Inpainting && mask.page == page)
                     .cloned(),
+                self.translation_instructions.clone(),
             ),
             self.stop.clone(),
             self.progress.clone(),

@@ -43,6 +43,7 @@ export function diagnosticHint(code) {
     TIMEOUT: "Tác vụ quá lâu; thử lại với một ảnh và kiểm tra trạng thái engine ở biểu tượng tray.",
     VALIDATION_ERROR: "Kiểm tra nhà cung cấp, model, ngôn ngữ và định dạng ảnh.",
     SERVICE_UNAVAILABLE: "Chạy MangaTranslate.exe --install, sau đó reload extension và thử lại.",
+    VISUAL_CONTEXT_FALLBACK: "Bản dịch vẫn hoàn tất nhưng không dùng ngữ cảnh ảnh. Kiểm tra mạng ở lần tải model đầu tiên, dung lượng ổ đĩa và log engine.",
   };
   return hints[code] || "Thử lại; nếu lỗi lặp lại, dùng mã lỗi và request ID để kiểm tra log service.";
 }

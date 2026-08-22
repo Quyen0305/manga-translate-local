@@ -841,7 +841,12 @@ impl Traversal<'_> {
                 .and_then(|value| value.color)
                 .unwrap_or([0, 0, 0, 255]),
             stroke: resolve_stroke(typography.as_ref()),
-            line_height: 1.2,
+            line_height: typography
+                .as_ref()
+                .and_then(|value| value.extensions.get("app.manga-translate.line-height"))
+                .and_then(|value| value.parse::<f32>().ok())
+                .filter(|value| value.is_finite() && (0.8..=3.0).contains(value))
+                .unwrap_or(1.2),
             letter_spacing: 0.0,
             word_spacing: 0.0,
             text_inset: [4.0; 4],

@@ -1,27 +1,30 @@
 use std::collections::BTreeMap;
-use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
-use image::{DynamicImage, ImageFormat};
 use koharu_pipeline::{
-    Committer, Operation, Pipeline, PipelineConfig, Request, RunStatus, Scope, StageOutput,
-    TranslationConfig,
+    Committer, Operation, Pipeline, PipelineConfig, Progress, Request, RunStatus, Scope, Stage,
+    StageOutput, StopToken, TranslationConfig,
 };
-use koharu_rasterizer::{RasterOptions, Rasterizer};
+use koharu_rasterizer::Rasterizer;
 use koharu_renderer::Renderer;
 use koharu_scene::{AssetInput, AssetMetadata, AssetRole, At, PageDraft, Session, Snapshot};
-use koharu_translator::{GenerationConfig, Language, ModelSelection, Provider, ProvidersConfig};
+use koharu_translator::{
+    GenerationConfig, Language, ModelSelection, Provider, ProvidersConfig, TranslationRequest,
+    Translator,
+};
 use serde::{Deserialize, Serialize};
 use sysinfo::{ProcessesToUpdate, System, get_current_pid};
 use tokio::sync::Mutex;
 
 use crate::config::{AppConfig, LifecyclePolicy};
 use crate::diagnostics::{ACTIVE_RUNTIME_DIRECTORY, CudaDiagnostics};
+use crate::editor::{EditorRequest, EditorScene, EditorSession, EditorStore};
 use crate::error::AppError;
+use crate::jobs::JobRegistry;
 
 pub const KOHARU_VERSION: &str = "0.70.2";
 
@@ -34,6 +37,7 @@ pub struct TranslationSettings {
     pub base_url: String,
     pub target_language: String,
     pub system_prompt: String,
+    pub visual_context_mode: String,
 }
 
 pub struct Engine {
@@ -51,6 +55,7 @@ pub struct Engine {
     recovery: RwLock<RecoveryState>,
     init_lock: Mutex<()>,
     job_lock: Mutex<()>,
+    editor_sessions: std::sync::Mutex<EditorStore>,
 }
 
 struct EngineApp {
@@ -64,6 +69,21 @@ struct EngineApp {
 struct CachedPipeline {
     profile: String,
     pipeline: Pipeline,
+}
+
+pub struct TranslationOutput {
+    pub bytes: Vec<u8>,
+    pub editor_session_id: Option<String>,
+}
+
+pub struct EditorOutput {
+    pub bytes: Vec<u8>,
+    pub scene: EditorScene,
+}
+
+struct ProcessedTranslation {
+    bytes: Vec<u8>,
+    editor: Option<EditorSession>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -136,6 +156,7 @@ impl Engine {
             loaded_at_epoch_seconds: AtomicU64::new(0),
             init_lock: Mutex::new(()),
             job_lock: Mutex::new(()),
+            editor_sessions: std::sync::Mutex::new(EditorStore::default()),
         }
     }
 
@@ -151,6 +172,9 @@ impl Engine {
             .and_then(|mut app| app.take())
             .is_some();
         if unloaded {
+            if let Ok(mut sessions) = self.editor_sessions.lock() {
+                sessions.clear();
+            }
             self.loaded_at_epoch_seconds.store(0, Ordering::Release);
             if let Ok(mut current) = self.last_unload_reason.write() {
                 *current = Some(reason.to_owned());
@@ -303,13 +327,27 @@ impl Engine {
         image: Vec<u8>,
         filename: String,
         settings: TranslationSettings,
-    ) -> Result<Vec<u8>, AppError> {
+        job_id: String,
+        jobs: Arc<JobRegistry>,
+    ) -> Result<TranslationOutput, AppError> {
         let _job = self.job_lock.lock().await;
+        if jobs.is_cancelled(&job_id) {
+            jobs.mark_cancelled(&job_id);
+            return Err(AppError::cancelled("Tác vụ đã bị hủy trước khi bắt đầu"));
+        }
         self.busy.store(true, Ordering::Release);
         self.touch();
-        let result = self.translate_locked(image, filename, settings).await;
+        jobs.mark_running(&job_id);
+        let result = self
+            .translate_locked(image, filename, settings, &job_id, jobs.clone())
+            .await;
         self.touch();
         self.busy.store(false, Ordering::Release);
+        match &result {
+            Ok(_) => jobs.complete(&job_id),
+            Err(error) if error.code == "JOB_CANCELLED" => jobs.mark_cancelled(&job_id),
+            Err(error) => jobs.fail(&job_id, &error.message),
+        }
         result
     }
 
@@ -318,13 +356,25 @@ impl Engine {
         image: Vec<u8>,
         filename: String,
         settings: TranslationSettings,
-    ) -> Result<Vec<u8>, AppError> {
+        job_id: &str,
+        jobs: Arc<JobRegistry>,
+    ) -> Result<TranslationOutput, AppError> {
         let app = self
             .ensure_app()
             .await
             .map_err(|error| self.engine_error(error, "Không khởi tạo được Koharu engine"))?;
-        match translate_with_app(&app, &image, &filename, &settings).await {
-            Ok(bytes) => Ok(bytes),
+        let processed = match translate_with_app(
+            &app,
+            &self.config.data_dir,
+            &image,
+            &filename,
+            &settings,
+            job_id,
+            jobs.clone(),
+        )
+        .await
+        {
+            Ok(processed) => Ok(processed),
             Err(error) if !app.cpu_only && is_cuda_compatibility_error(&format!("{error:#}")) => {
                 let reason = format!("CUDA không tương thích: {error:#}");
                 tracing::warn!(%reason, "retrying translation with CPU fallback");
@@ -333,12 +383,111 @@ impl Engine {
                 let cpu_app = self.ensure_app().await.map_err(|error| {
                     self.engine_error(error, "Không khởi tạo được CPU fallback")
                 })?;
-                translate_with_app(&cpu_app, &image, &filename, &settings)
-                    .await
-                    .map_err(|error| self.engine_error(error, "CPU fallback xử lý thất bại"))
+                translate_with_app(
+                    &cpu_app,
+                    &self.config.data_dir,
+                    &image,
+                    &filename,
+                    &settings,
+                    job_id,
+                    jobs,
+                )
+                .await
+                .map_err(|error| self.engine_error(error, "CPU fallback xử lý thất bại"))
             }
             Err(error) => Err(self.engine_error(error, "Koharu pipeline xử lý thất bại")),
+        }?;
+        let editor_session_id = if let Some(editor) = processed.editor {
+            let scene = self
+                .editor_sessions
+                .lock()
+                .map_err(|_| AppError::internal("Editor session registry bị khóa lỗi"))?
+                .insert(editor)
+                .map_err(|error| {
+                    AppError::internal(format!("Không lưu được editor scene: {error:#}"))
+                })?;
+            Some(scene.session_id)
+        } else {
+            None
+        };
+        Ok(TranslationOutput {
+            bytes: processed.bytes,
+            editor_session_id,
+        })
+    }
+
+    pub fn editor_scene(&self, session_id: &str) -> Result<EditorScene, AppError> {
+        self.editor_sessions
+            .lock()
+            .map_err(|_| AppError::internal("Editor session registry bị khóa lỗi"))?
+            .scene(session_id)
+            .map_err(|error| AppError::internal(format!("Không đọc được editor scene: {error:#}")))?
+            .ok_or_else(|| {
+                AppError::editor_expired(
+                    "Phiên chỉnh sửa đã hết hạn; hãy dịch lại ảnh để tạo scene mới",
+                )
+            })
+    }
+
+    pub async fn edit_render(
+        &self,
+        session_id: String,
+        request: EditorRequest,
+        retranslate: Option<TranslationSettings>,
+    ) -> Result<EditorOutput, AppError> {
+        let _job = self.job_lock.lock().await;
+        let mut editor = self
+            .editor_sessions
+            .lock()
+            .map_err(|_| AppError::internal("Editor session registry bị khóa lỗi"))?
+            .take(&session_id)
+            .ok_or_else(|| {
+                AppError::editor_expired(
+                    "Phiên chỉnh sửa đã hết hạn; hãy dịch lại ảnh để tạo scene mới",
+                )
+            })?;
+        self.busy.store(true, Ordering::Release);
+        self.touch();
+
+        let result = async {
+            let app = self
+                .ensure_app()
+                .await
+                .map_err(|error| self.engine_error(error, "Không khởi tạo được editor engine"))?;
+            if let Some(settings) = retranslate {
+                let text = retranslate_segment(&app, &editor, &request.segment_id, &settings)
+                    .await
+                    .map_err(|error| {
+                        AppError::provider(format!("Không dịch lại được bong bóng: {error:#}"))
+                    })?;
+                editor
+                    .set_retranslation(&request.segment_id, text)
+                    .await
+                    .map_err(|error| {
+                        self.engine_error(error, "Không cập nhật được câu dịch mới")
+                    })?;
+            } else {
+                editor.apply(&request).await.map_err(|error| {
+                    AppError::validation(format!("Không áp dụng được chỉnh sửa: {error:#}"))
+                })?;
+            }
+            let bytes = editor
+                .render(&app.renderer, &app.rasterizer)
+                .await
+                .map_err(|error| self.engine_error(error, "Không render lại được ảnh"))?;
+            let scene = editor.scene(&session_id).map_err(|error| {
+                AppError::internal(format!("Không đọc lại được editor scene: {error:#}"))
+            })?;
+            Ok(EditorOutput { bytes, scene })
         }
+        .await;
+
+        if let Ok(mut sessions) = self.editor_sessions.lock() {
+            sessions.put_back(session_id, editor);
+        }
+        self.touch();
+        self.busy.store(false, Ordering::Release);
+        result
     }
 
     pub async fn retry_gpu(&self) -> Result<bool> {
@@ -435,6 +584,9 @@ impl Engine {
     fn engine_error(&self, error: anyhow::Error, context: &str) -> AppError {
         let details = format!("{error:#}");
         let classification = classify_engine_error(&details);
+        if classification.code == "JOB_CANCELLED" {
+            return AppError::cancelled("Tác vụ dịch đã được hủy an toàn");
+        }
         self.record_failure(classification.code, &details, "failed");
         AppError::engine_code(
             classification.code,
@@ -635,6 +787,12 @@ struct EngineErrorClassification {
 
 fn classify_engine_error(message: &str) -> EngineErrorClassification {
     let message = message.to_ascii_lowercase();
+    if message.contains("translation job cancelled") {
+        return EngineErrorClassification {
+            code: "JOB_CANCELLED",
+            hint: "Tác vụ đã dừng an toàn; các ảnh hoàn tất trước đó vẫn được giữ.",
+        };
+    }
     if is_cuda_compatibility_error(&message) {
         return EngineErrorClassification {
             code: "CUDA_INCOMPATIBLE",
@@ -692,10 +850,13 @@ fn classify_engine_error(message: &str) -> EngineErrorClassification {
 
 async fn translate_with_app(
     app: &Arc<EngineApp>,
+    data_dir: &std::path::Path,
     image: &[u8],
     filename: &str,
     settings: &TranslationSettings,
-) -> Result<Vec<u8>> {
+    job_id: &str,
+    jobs: Arc<JobRegistry>,
+) -> Result<ProcessedTranslation> {
     let provider = provider(settings)?;
     let _secret = SecretLease::install(secret_key(provider), &settings.api_key)?;
     let decoded = image::load_from_memory(image).context("decode source image")?;
@@ -732,39 +893,180 @@ async fn translate_with_app(
     let page = page.context("page ID was not assigned")?;
 
     let pipeline = app.pipeline(settings)?;
+    let stop = jobs
+        .stop_token(job_id)
+        .context("translation job stop token is missing")?;
+
+    let mut editor_instructions = None;
+    if settings.visual_context_mode == crate::visual_context::MODE {
+        execute_pipeline_operation(
+            &pipeline,
+            &mut session,
+            page,
+            Operation::Through { stage: Stage::Ocr },
+            stop.clone(),
+            &jobs,
+            job_id,
+            None,
+        )
+        .await?;
+
+        let evidence = crate::visual_context::scene_evidence(
+            &session.snapshot(),
+            page,
+            decoded.width(),
+            decoded.height(),
+        )?;
+        jobs.mark_visual_context_loading(job_id);
+        let translation_instructions = match crate::visual_context::analyze_cached(
+            data_dir,
+            app.device.clone(),
+            image,
+            &evidence,
+        )
+        .await
+        {
+            Ok(analysis) => {
+                jobs.mark_visual_context_completed(job_id, analysis.cached);
+                Some(crate::visual_context::append_to_system_prompt(
+                    &settings.system_prompt,
+                    &analysis.instructions,
+                ))
+            }
+            Err(error) => {
+                let message = format!(
+                    "MiniCPM-V không tạo được ngữ cảnh đã kiểm chứng, tiếp tục dịch thường: {error:#}"
+                );
+                tracing::warn!(%message, "visual context fallback");
+                jobs.mark_visual_context_fallback(job_id, message);
+                None
+            }
+        };
+        if stop.stopped() {
+            bail!("translation job cancelled");
+        }
+        editor_instructions = translation_instructions.clone();
+        execute_pipeline_operation(
+            &pipeline,
+            &mut session,
+            page,
+            Operation::Stages {
+                stages: vec![Stage::Translation, Stage::Inpainting],
+            },
+            stop.clone(),
+            &jobs,
+            job_id,
+            translation_instructions,
+        )
+        .await?;
+    } else {
+        execute_pipeline_operation(
+            &pipeline,
+            &mut session,
+            page,
+            Operation::Full,
+            stop.clone(),
+            &jobs,
+            job_id,
+            None,
+        )
+        .await?;
+    }
+
+    jobs.mark_rendering(job_id);
     let snapshot = session.snapshot();
-    let mut committer = SessionCommitter(&mut session);
+    let bytes =
+        crate::editor::render_snapshot(&app.renderer, &app.rasterizer, &snapshot, page).await?;
+    if stop.stopped() {
+        bail!("translation job cancelled");
+    }
+    drop(snapshot);
+    let editor = match EditorSession::new(
+        session,
+        page,
+        decoded.width(),
+        decoded.height(),
+        editor_instructions,
+    ) {
+        Ok(editor) => Some(editor),
+        Err(error) => {
+            tracing::warn!(error = %format!("{error:#}"), "translated image has no editable scene");
+            None
+        }
+    };
+    Ok(ProcessedTranslation { bytes, editor })
+}
+
+async fn retranslate_segment(
+    app: &Arc<EngineApp>,
+    editor: &EditorSession,
+    segment_id: &str,
+    settings: &TranslationSettings,
+) -> Result<String> {
+    let provider = provider(settings)?;
+    let _secret = SecretLease::install(secret_key(provider), &settings.api_key)?;
+    let (pipeline, providers) = pipeline_configs(settings)?;
+    let translator =
+        Translator::from_config(app.device.clone(), koharu_config::Config::memory(providers))?;
+    let source = editor.source_text(segment_id)?;
+    let mut request = TranslationRequest::new([source], pipeline.translation.target_language);
+    if let Some(instructions) = editor
+        .translation_instructions()
+        .map(str::to_owned)
+        .or_else(|| non_empty(&settings.system_prompt))
+    {
+        request = request.with_instructions(format!(
+            "{instructions}\nTranslate only this single manga text segment. Return exactly one translated segment."
+        ));
+    }
+    let (_, translated) = translator
+        .translate(
+            &pipeline.translation.model,
+            pipeline.translation.generation,
+            request,
+        )
+        .await?;
+    translated
+        .into_iter()
+        .next()
+        .context("translation provider returned no segment")
+}
+
+async fn execute_pipeline_operation(
+    pipeline: &Pipeline,
+    session: &mut Session,
+    page: koharu_scene::EntityId,
+    operation: Operation,
+    stop: StopToken,
+    jobs: &Arc<JobRegistry>,
+    job_id: &str,
+    translation_instructions: Option<String>,
+) -> Result<()> {
+    let progress_jobs = jobs.clone();
+    let progress_job_id = job_id.to_owned();
+    let snapshot = session.snapshot();
+    let mut committer = SessionCommitter(session);
     let report = pipeline
         .execute(
             snapshot,
             Request {
-                operation: Operation::Full,
+                operation,
                 scope: Scope::Pages(vec![page]),
+                stop: stop.clone(),
+                progress: Some(Arc::new(move |event: Progress| {
+                    progress_jobs.progress(&progress_job_id, event);
+                })),
+                translation_instructions,
                 ..Request::default()
             },
             &mut committer,
         )
         .await
         .context("run Koharu 0.70.2 pipeline")?;
-    if report.status != RunStatus::Completed {
-        bail!("Koharu pipeline stopped before completion");
+    if report.status != RunStatus::Completed || stop.stopped() {
+        bail!("translation job cancelled");
     }
-
-    let snapshot = session.snapshot();
-    let frame = app
-        .renderer
-        .render(&snapshot, page)
-        .await
-        .context("render translated scene")?;
-    let raster = app
-        .rasterizer
-        .rasterize(&frame.raster_frame()?, RasterOptions::default())
-        .context("rasterize translated scene")?;
-    let mut output = Cursor::new(Vec::new());
-    DynamicImage::ImageRgba8(raster.image)
-        .write_to(&mut output, ImageFormat::Png)
-        .context("encode translated PNG")?;
-    Ok(output.into_inner())
+    Ok(())
 }
 
 struct SessionCommitter<'a>(&'a mut Session);
@@ -942,6 +1244,10 @@ mod tests {
             classify_engine_error("The procedure could not be found in torch.dll").code,
             "RUNTIME_DLL_INCOMPATIBLE"
         );
+        assert_eq!(
+            classify_engine_error("translation job cancelled").code,
+            "JOB_CANCELLED"
+        );
     }
 
     #[test]
@@ -953,6 +1259,7 @@ mod tests {
             base_url: String::new(),
             target_language: "vi".into(),
             system_prompt: "Natural manga dialogue".into(),
+            visual_context_mode: "off".into(),
         };
         let (pipeline, _) = pipeline_configs(&settings).unwrap();
         assert_eq!(

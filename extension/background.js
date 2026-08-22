@@ -1,11 +1,25 @@
-import { cacheClear, cacheCount, cacheGet, cachePut } from "./cache.js";
+import { cacheClear, cacheDelete, cacheGet, cachePrune, cachePut, cacheStats } from "./cache.js";
+import {
+  CACHE_MAX_AGE_MS,
+  CACHE_MAX_BYTES,
+  CACHE_MAX_ENTRIES,
+  CACHE_PIPELINE_VERSION,
+  cacheEntryMetadata,
+  cacheFingerprint,
+  cacheScopeForPage,
+} from "./cache-metadata.js";
 import { calculateCaptureCrop } from "./capture-utils.js";
 import { createErrorRecord, ERROR_LOG_KEY, mergeErrorLog } from "./error-utils.js";
 import { migrateLegacyProfile } from "./profile-utils.js";
 
 const SERVICE_URL = "http://127.0.0.1:40721";
 const NATIVE_HOST = "com.manga_translate.local";
+const JOB_POLL_INTERVAL_MS = 250;
+const CACHE_MAINTENANCE_INTERVAL_MS = 10 * 60 * 1000;
 let nativeWakePromise = null;
+let cacheMaintenancePromise = null;
+let lastCacheMaintenanceAt = 0;
+const cancelledJobs = new Set();
 const DEFAULT_SETTINGS = {
   extensionEnabled: true,
   provider: "gemini",
@@ -19,6 +33,7 @@ const DEFAULT_SETTINGS = {
   minArea: 120000,
   autoTranslate: false,
   restoreCacheOnLoad: true,
+  visualContextMode: "off",
   apiProfiles: {},
   providerModels: {},
 };
@@ -43,18 +58,30 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 refreshActionState();
 wakeServiceForEnabledExtension();
+runCacheMaintenance().catch(() => {});
 
 chrome.commands.onCommand.addListener(async (command) => {
   const { extensionEnabled } = await chrome.storage.local.get({ extensionEnabled: true });
   if (!extensionEnabled) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
-  if (command === "translate-page") chrome.tabs.sendMessage(tab.id, { type: "TRANSLATE_PAGE" });
-  if (command === "restore-page") chrome.tabs.sendMessage(tab.id, { type: "RESTORE_PAGE" });
+  if (command === "translate-page") await sendContentMessage(tab.id, { type: "TRANSLATE_PAGE" });
+  if (command === "restore-page") await sendContentMessage(tab.id, { type: "RESTORE_PAGE" });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message, sender).then(sendResponse).catch(async (error) => {
+    if (error?.code === "JOB_CANCELLED") {
+      sendResponse({
+        ok: false,
+        error: error.message || "Tác vụ đã được hủy",
+        code: "JOB_CANCELLED",
+        httpStatus: error.httpStatus,
+        requestId: error.requestId,
+        reported: true,
+      });
+      return;
+    }
     const diagnostic = await recordError({
       error,
       operation: message?.type,
@@ -78,6 +105,14 @@ async function handleMessage(message, sender) {
   switch (message.type) {
     case "TRANSLATE_IMAGE":
       return translateImage(message.payload, sender);
+    case "EDIT_TRANSLATION_SEGMENT":
+      return editTranslationSegment(message.payload);
+    case "REFRESH_EDITOR_SESSION":
+      return refreshEditorSession(message.payload);
+    case "CANCEL_TRANSLATION_JOB":
+      return cancelTranslationJob(message.payload);
+    case "ENSURE_CONTENT_SCRIPT":
+      return ensureContentScript(message.payload?.tabId);
     case "LOOKUP_CACHED_IMAGE":
       return lookupCachedImage(message.payload, sender);
     case "CHECK_ENGINE":
@@ -95,10 +130,15 @@ async function handleMessage(message, sender) {
     case "LIST_MODELS":
       return listModels(message.payload);
     case "CLEAR_CACHE":
-      await cacheClear();
-      return { ok: true, count: 0 };
-    case "CACHE_COUNT":
-      return { ok: true, count: await cacheCount() };
+      return clearTranslationCache(message.payload);
+    case "CACHE_STATS":
+      return translationCacheStats(message.payload);
+    case "CACHE_PRUNE":
+      return { ok: true, data: await runCacheMaintenance({ force: true }) };
+    case "CACHE_COUNT": {
+      const stats = await cacheStats();
+      return { ok: true, count: stats.total.count };
+    }
     case "GET_ERROR_LOG": {
       const stored = await chrome.storage.local.get({ [ERROR_LOG_KEY]: [] });
       return { ok: true, errors: stored[ERROR_LOG_KEY] };
@@ -113,18 +153,44 @@ async function handleMessage(message, sender) {
   }
 }
 
+async function ensureContentScript(tabId) {
+  if (!Number.isInteger(tabId)) return { ok: false, error: "Tab không hợp lệ" };
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["queue-utils.js", "editor-utils.js", "content.js"],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message || "Không thể kích hoạt extension trên tab này" };
+  }
+}
+
+async function sendContentMessage(tabId, message) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    const injected = await ensureContentScript(tabId);
+    if (!injected.ok) return injected;
+    return chrome.tabs.sendMessage(tabId, message);
+  }
+}
+
 async function lookupCachedImage(payload, sender) {
   const settings = { ...DEFAULT_SETTINGS, ...(await chrome.storage.local.get(DEFAULT_SETTINGS)) };
   if (!settings.extensionEnabled) throw extensionDisabled();
   const source = await loadImage(payload, sender);
   if (source.contentType.includes("svg")) return { ok: true, hit: false };
-  const cacheKey = await createCacheKey(source.bytes, settings);
-  const cached = await cacheGet(cacheKey);
+  const { cached } = await findCachedEntry(source.bytes, settings, payload?.pageUrl);
   if (!cached) return { ok: true, hit: false };
   return {
     ok: true,
     hit: true,
     dataUrl: bytesToDataUrl(cached.bytes, cached.contentType),
+    cacheKey: cached.key,
+    editorSessionId: cached.editorSessionId || "",
+    editorScene: cached.editorScene || null,
   };
 }
 
@@ -215,18 +281,32 @@ async function cleanStorage(payload) {
 }
 
 async function translateImage(payload, sender) {
+  const jobId = payload.jobId || crypto.randomUUID();
+  try {
+    return await translateImageJob(payload, sender, jobId);
+  } finally {
+    cancelledJobs.delete(jobId);
+  }
+}
+
+async function translateImageJob(payload, sender, jobId) {
   const settings = { ...DEFAULT_SETTINGS, ...(await chrome.storage.local.get(DEFAULT_SETTINGS)) };
   if (!settings.extensionEnabled) throw extensionDisabled();
   const source = await loadImage(payload, sender);
   if (source.contentType.includes("svg")) throw new Error("MVP chưa hỗ trợ ảnh SVG");
+  if (cancelledJobs.has(jobId)) throw jobCancelled();
 
-  const cacheKey = await createCacheKey(source.bytes, settings);
-  const cached = await cacheGet(cacheKey);
+  const cacheLookup = await findCachedEntry(source.bytes, settings, payload?.pageUrl);
+  const cached = payload?.bypassCache ? null : cacheLookup.cached;
+  if (cancelledJobs.has(jobId)) throw jobCancelled();
   if (cached) {
     return {
       ok: true,
       dataUrl: bytesToDataUrl(cached.bytes, cached.contentType),
       cached: true,
+      cacheKey: cached.key,
+      editorSessionId: cached.editorSessionId || "",
+      editorScene: cached.editorScene || null,
     };
   }
 
@@ -239,21 +319,219 @@ async function translateImage(payload, sender) {
     "x-mt-target-language": settings.targetLanguage,
     "x-mt-system-prompt": encodeURIComponent(settings.systemPrompt),
     "x-mt-filename": safeFilename(payload.filename || "manga-page.png"),
+    "x-mt-job-id": jobId,
+    "x-mt-visual-context-mode": settings.visualContextMode || "off",
   };
-  const response = await serviceFetch("/api/v1/translate-image", {
-    method: "POST",
-    headers,
-    body: source.bytes,
-  });
+  let polling = true;
+  const progressTask = relayJobProgress(jobId, sender, () => polling);
+  let response;
+  try {
+    response = await serviceFetch("/api/v1/translate-image", {
+      method: "POST",
+      headers,
+      body: source.bytes,
+    });
+  } finally {
+    polling = false;
+    await progressTask;
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw responseError(body, response.status, `Local service trả về HTTP ${response.status}`);
   }
+  const visualContextState = response.headers.get("x-mt-visual-context");
+  if (visualContextState === "fallback") {
+    const encodedMessage = response.headers.get("x-mt-visual-context-message") || "";
+    const message = decodeURIComponent(encodedMessage || "MiniCPM-V không khả dụng; đã dịch không có ngữ cảnh ảnh.");
+    await recordError({
+      source: "engine",
+      operation: "VISUAL_CONTEXT",
+      code: "VISUAL_CONTEXT_FALLBACK",
+      message,
+      pageUrl: payload?.pageUrl,
+      image: payload?.filename,
+      provider: settings.provider,
+    });
+  }
+  if (cancelledJobs.has(jobId)) throw jobCancelled();
 
   const bytes = await response.arrayBuffer();
   const contentType = response.headers.get("content-type") || "image/png";
-  await cachePut({ key: cacheKey, bytes, contentType });
-  return { ok: true, dataUrl: bytesToDataUrl(bytes, contentType), cached: false };
+  const editorSessionId = response.headers.get("x-mt-editor-session") || "";
+  const editorScene = editorSessionId
+    ? await fetchEditorScene(editorSessionId).catch(() => null)
+    : null;
+  await cachePut({
+    key: cacheLookup.key,
+    bytes,
+    contentType,
+    editorSessionId,
+    editorScene,
+    ...cacheLookup.metadata,
+  });
+  runCacheMaintenance().catch(() => {});
+  return {
+    ok: true,
+    dataUrl: bytesToDataUrl(bytes, contentType),
+    cached: false,
+    jobId,
+    cacheKey: cacheLookup.key,
+    editorSessionId,
+    editorScene,
+  };
+}
+
+async function editTranslationSegment(payload) {
+  const sessionId = String(payload?.sessionId || "");
+  const segmentId = String(payload?.segmentId || "");
+  const action = String(payload?.action || "render");
+  if (!sessionId || !segmentId) throw new Error("Thiếu phiên hoặc segment cần chỉnh sửa");
+  if (!["render", "retranslate", "reset"].includes(action)) throw new Error("Thao tác editor không hợp lệ");
+
+  const settings = { ...DEFAULT_SETTINGS, ...(await chrome.storage.local.get(DEFAULT_SETTINGS)) };
+  if (!settings.extensionEnabled) throw extensionDisabled();
+  const path = action === "retranslate"
+    ? `/api/v1/editor/${encodeURIComponent(sessionId)}/retranslate`
+    : `/api/v1/editor/${encodeURIComponent(sessionId)}/render`;
+  const headers = {
+    "content-type": "application/json",
+    ...(action === "retranslate" ? translationHeaders(settings) : {}),
+  };
+  const response = await serviceFetch(path, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      segmentId,
+      text: action === "render" ? String(payload?.text ?? "") : undefined,
+      style: action === "render" ? payload?.style : undefined,
+      resetToApi: action === "reset",
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không render lại được ảnh (HTTP ${response.status})`);
+  }
+  const bytes = await response.arrayBuffer();
+  const contentType = response.headers.get("content-type") || "image/png";
+  const editorScene = await fetchEditorScene(sessionId);
+  const cacheKey = String(payload?.cacheKey || "");
+  if (cacheKey) {
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      await cachePut({
+        ...cached,
+        bytes,
+        contentType,
+        byteLength: bytes.byteLength,
+        editorSessionId: sessionId,
+        editorScene,
+      });
+    }
+  }
+  return {
+    ok: true,
+    dataUrl: bytesToDataUrl(bytes, contentType),
+    editorSessionId: sessionId,
+    editorScene,
+    cacheKey,
+  };
+}
+
+async function refreshEditorSession(payload) {
+  const sessionId = String(payload?.sessionId || "");
+  if (!sessionId) throw new Error("Thiếu phiên chỉnh sửa");
+  return {
+    ok: true,
+    editorSessionId: sessionId,
+    editorScene: await fetchEditorScene(sessionId),
+  };
+}
+
+async function fetchEditorScene(sessionId) {
+  const response = await serviceFetch(`/api/v1/editor/${encodeURIComponent(sessionId)}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không đọc được editor scene (HTTP ${response.status})`);
+  }
+  return response.json();
+}
+
+function translationHeaders(settings) {
+  return {
+    "x-mt-provider": settings.provider,
+    "x-mt-model": settings.model,
+    "x-mt-api-key": settings.apiKey,
+    "x-mt-base-url": settings.baseUrl,
+    "x-mt-target-language": settings.targetLanguage,
+    "x-mt-system-prompt": encodeURIComponent(settings.systemPrompt),
+    "x-mt-visual-context-mode": settings.visualContextMode || "off",
+  };
+}
+
+async function cancelTranslationJob(payload) {
+  const jobId = String(payload?.jobId || "");
+  if (!jobId) return { ok: false, error: "Không có tác vụ đang chạy" };
+  cancelledJobs.add(jobId);
+  const response = await serviceFetch(`/api/v1/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    if ([404, 409].includes(response.status)) return { ok: true, pending: true };
+    const body = await response.json().catch(() => null);
+    throw responseError(body, response.status, `Không hủy được tác vụ (HTTP ${response.status})`);
+  }
+  return { ok: true, data: await response.json() };
+}
+
+function jobCancelled() {
+  const error = new Error("Tác vụ dịch đã được hủy");
+  error.code = "JOB_CANCELLED";
+  return error;
+}
+
+async function relayJobProgress(jobId, sender, isActive) {
+  let lastSignature = "";
+  await new Promise((resolve) => setTimeout(resolve, JOB_POLL_INTERVAL_MS));
+  do {
+    const progress = await fetchJobProgress(jobId);
+    if (progress) {
+      const signature = JSON.stringify(progress);
+      if (signature !== lastSignature) {
+        lastSignature = signature;
+        await sendJobProgress(sender, jobId, progress);
+      }
+      if (["completed", "failed", "cancelled"].includes(progress.state)) return;
+    }
+    if (!isActive()) break;
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_INTERVAL_MS));
+  } while (isActive());
+
+  const finalProgress = await fetchJobProgress(jobId);
+  if (finalProgress && JSON.stringify(finalProgress) !== lastSignature) {
+    await sendJobProgress(sender, jobId, finalProgress);
+  }
+}
+
+async function fetchJobProgress(jobId) {
+  try {
+    const response = await fetch(`${SERVICE_URL}/api/v1/jobs/${encodeURIComponent(jobId)}`, {
+      cache: "no-store",
+    });
+    if (response.status === 204) return null;
+    return response.ok ? response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function sendJobProgress(sender, jobId, progress) {
+  if (!sender?.tab?.id) return;
+  const options = Number.isInteger(sender.frameId) ? { frameId: sender.frameId } : undefined;
+  await chrome.tabs.sendMessage(sender.tab.id, {
+    type: "TRANSLATION_PROGRESS",
+    jobId,
+    progress,
+  }, options).catch(() => {});
 }
 
 async function serviceFetch(path, options = {}) {
@@ -362,21 +640,82 @@ async function updateActionState(enabled) {
   });
 }
 
-async function createCacheKey(bytes, settings) {
+async function findCachedEntry(bytes, settings, pageUrl) {
+  const metadata = cacheEntryMetadata(pageUrl, settings);
+  const key = await createCacheKey(bytes, settings);
+  let cached = await cacheGet(key, metadata);
+  if (cached) return { key, metadata, cached };
+
+  if ((settings.visualContextMode || "off") !== "off") {
+    return { key, metadata, cached: undefined };
+  }
+  const legacyKey = await createCacheKey(bytes, settings, { legacy: true });
+  cached = await cacheGet(legacyKey, metadata);
+  if (!cached) return { key, metadata, cached: undefined };
+
+  await cachePut({ ...cached, ...metadata, key });
+  await cacheDelete(legacyKey);
+  return { key, metadata, cached: { ...cached, ...metadata, key } };
+}
+
+async function createCacheKey(bytes, settings, options) {
   const encoder = new TextEncoder();
-  const fingerprint = JSON.stringify({
-    provider: settings.provider,
-    model: settings.model,
-    baseUrl: settings.baseUrl,
-    targetLanguage: settings.targetLanguage,
-    systemPrompt: settings.systemPrompt,
-  });
+  const fingerprint = JSON.stringify(cacheFingerprint(settings, options));
   const metadata = encoder.encode(fingerprint);
   const merged = new Uint8Array(bytes.byteLength + metadata.byteLength);
   merged.set(new Uint8Array(bytes), 0);
   merged.set(metadata, bytes.byteLength);
   const hash = await crypto.subtle.digest("SHA-256", merged);
   return [...new Uint8Array(hash)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function translationCacheStats(payload) {
+  await runCacheMaintenance();
+  const scope = cacheScopeForPage(payload?.pageUrl);
+  const data = await cacheStats({
+    ...scope,
+    pipelineVersion: CACHE_PIPELINE_VERSION,
+    maxAgeMs: CACHE_MAX_AGE_MS,
+  });
+  return {
+    ok: true,
+    data: {
+      ...data,
+      scope,
+      policy: {
+        pipelineVersion: CACHE_PIPELINE_VERSION,
+        maxAgeMs: CACHE_MAX_AGE_MS,
+        maxBytes: CACHE_MAX_BYTES,
+        maxEntries: CACHE_MAX_ENTRIES,
+      },
+    },
+  };
+}
+
+async function clearTranslationCache(payload) {
+  const scope = ["page", "site", "all"].includes(payload?.scope) ? payload.scope : "all";
+  const location = cacheScopeForPage(payload?.pageUrl);
+  const data = await cacheClear({ scope, ...location });
+  return { ok: true, data };
+}
+
+async function runCacheMaintenance({ force = false } = {}) {
+  if (!force && lastCacheMaintenanceAt
+    && Date.now() - lastCacheMaintenanceAt < CACHE_MAINTENANCE_INTERVAL_MS) {
+    return { removedCount: 0, removedBytes: 0, skipped: true };
+  }
+  if (!cacheMaintenancePromise) {
+    cacheMaintenancePromise = cachePrune({
+      pipelineVersion: CACHE_PIPELINE_VERSION,
+      maxAgeMs: CACHE_MAX_AGE_MS,
+      maxBytes: CACHE_MAX_BYTES,
+      maxEntries: CACHE_MAX_ENTRIES,
+    }).then((result) => {
+      lastCacheMaintenanceAt = Date.now();
+      return result;
+    }).finally(() => { cacheMaintenancePromise = null; });
+  }
+  return cacheMaintenancePromise;
 }
 
 function bytesToDataUrl(bytes, contentType) {

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Popup cache fixture</title>
+    <link rel="stylesheet" href="/extension/popup/popup.css">
+  </head>
+  <body>
+    <header>
+      <div><h1>Manga Translate</h1><p>Koharu local engine</p></div>
+      <span id="engine-status" data-state="ready">Sẵn sàng</span>
+    </header>
+    <section class="queue-overview">
+      <div class="queue-popup-copy"><strong>Hàng đợi trang</strong><span id="queue-popup-status">15/15 · Hoàn tất</span></div>
+      <div class="queue-popup-actions"><button class="queue-start">Dịch trang</button><button class="icon-button">Ⅱ</button><button class="icon-button">↻</button><button class="icon-button danger">■</button></div>
+    </section>
+    <details class="cache-panel" open>
+      <summary><span>Cache bản dịch</span><span id="cache-summary">128 bản · 486,3 MB</span></summary>
+      <div class="cache-content">
+        <dl class="cache-grid">
+          <dt>Toàn bộ</dt><dd>128 bản · 486,3 MB</dd>
+          <dt>Website này</dt><dd>42 · 161,8 MB</dd>
+          <dt>Trang/chapter này</dt><dd>15 · 58,2 MB</dd>
+          <dt>Pipeline</dt><dd>koharu-0.70.2-scene-v1</dd>
+          <dt>Tự dọn</dt><dd>90 ngày · 1,00 GB / 1.000 bản</dd>
+        </dl>
+        <p class="cache-scope">https://mangadex.org/chapter/30e8a046-ed96-4629-bfed-f4525b602700</p>
+        <div class="cache-actions">
+          <button class="secondary">Xóa trang này</button>
+          <button class="secondary">Xóa website này</button>
+          <button class="secondary">Dọn cache cũ</button>
+          <button class="secondary danger-text">Xóa tất cả</button>
+        </div>
+      </div>
+    </details>
+  </body>
+</html>

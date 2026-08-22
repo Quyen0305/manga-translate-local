@@ -931,6 +931,7 @@ mod tests {
                 page,
                 png: encode(&DynamicImage::ImageLuma8(transient)),
             }),
+            None,
         );
 
         let prepared = prepare(&input).await.unwrap();

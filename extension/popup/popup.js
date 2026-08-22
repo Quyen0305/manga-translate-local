@@ -25,6 +25,7 @@ const DEFAULTS = {
   minArea: 120000,
   autoTranslate: false,
   restoreCacheOnLoad: true,
+  visualContextMode: "off",
   apiProfiles: {},
   providerModels: {},
 };
@@ -49,6 +50,7 @@ const fields = {
   minWidth: document.querySelector("#min-width"),
   minHeight: document.querySelector("#min-height"),
   autoTranslate: document.querySelector("#auto-translate"),
+  visualContextMode: document.querySelector("#visual-context-mode"),
 };
 
 let apiProfiles = {};
@@ -56,10 +58,14 @@ let providerModels = {};
 let activeProfile = { provider: DEFAULTS.provider, model: DEFAULTS.model };
 let modelChangeTimer;
 let cleanupCandidates = [];
+let queueState = { state: "idle" };
 
 document.addEventListener("DOMContentLoaded", initialize);
 document.querySelector("#save").addEventListener("click", save);
-document.querySelector("#clear-cache").addEventListener("click", clearCache);
+document.querySelector("#clear-page-cache").addEventListener("click", () => clearCache("page"));
+document.querySelector("#clear-site-cache").addEventListener("click", () => clearCache("site"));
+document.querySelector("#clear-cache").addEventListener("click", () => clearCache("all"));
+document.querySelector("#prune-cache").addEventListener("click", pruneCache);
 document.querySelector("#refresh-models").addEventListener("click", () => refreshModels());
 document.querySelector("#check-api").addEventListener("click", checkApiConfiguration);
 document.querySelector("#clear-errors").addEventListener("click", clearErrors);
@@ -89,6 +95,12 @@ fields.apiKey.addEventListener("input", handleCredentialInput);
 fields.baseUrl.addEventListener("input", handleCredentialInput);
 fields.extensionEnabled.addEventListener("change", persistModeSwitches);
 fields.autoTranslate.addEventListener("change", persistModeSwitches);
+document.querySelector("#queue-popup-pause").addEventListener("click", () => {
+  sendQueueCommand(queueState.state === "paused" ? "resume" : "pause");
+});
+document.querySelector("#queue-popup-start").addEventListener("click", () => sendQueueCommand("start"));
+document.querySelector("#queue-popup-retry").addEventListener("click", () => sendQueueCommand("retry-failed"));
+document.querySelector("#queue-popup-cancel").addEventListener("click", () => sendQueueCommand("cancel"));
 
 async function initialize() {
   const settings = { ...DEFAULTS, ...(await chrome.storage.local.get(DEFAULTS)) };
@@ -105,11 +117,97 @@ async function initialize() {
   }
   loadActiveProfile();
   updateProviderUi();
-  await Promise.all([checkEngine(), updateDiagnostics(), updateCacheCount(), updateErrorLog()]);
+  await Promise.all([checkEngine(), updateDiagnostics(), updateCacheStats(), updateErrorLog(), updateQueueStatus()]);
   setInterval(updateEngineStatus, 2000);
+  setInterval(updateQueueStatus, 800);
   if (settings.apiKey || (settings.provider === "openai-compatible" && settings.baseUrl)) {
     await refreshModels(true);
   }
+}
+
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.id ? tab : null;
+}
+
+async function updateQueueStatus() {
+  try {
+    const tab = await activeTab();
+    if (!tab) throw new Error("Không có tab đang hoạt động");
+    const next = await queueMessage(tab.id, { type: "GET_QUEUE_STATE" });
+    queueState = next || { state: "idle" };
+  } catch {
+    queueState = { state: "unavailable", canPause: false, canCancel: false, canRetry: false };
+  }
+  renderQueueStatus(queueState);
+}
+
+async function sendQueueCommand(command) {
+  try {
+    const tab = await activeTab();
+    if (!tab) return;
+    const next = await queueMessage(tab.id, { type: "QUEUE_COMMAND", command });
+    if (next) queueState = next;
+    renderQueueStatus(queueState);
+    setTimeout(updateQueueStatus, 120);
+  } catch {
+    await updateQueueStatus();
+  }
+}
+
+async function queueMessage(tabId, message) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    const injected = await chrome.runtime.sendMessage({ type: "ENSURE_CONTENT_SCRIPT", payload: { tabId } });
+    if (!injected?.ok) throw new Error(injected?.error || "Không thể kích hoạt extension trên tab");
+    return chrome.tabs.sendMessage(tabId, message);
+  }
+}
+
+function renderQueueStatus(state) {
+  const status = document.querySelector("#queue-popup-status");
+  const start = document.querySelector("#queue-popup-start");
+  const pause = document.querySelector("#queue-popup-pause");
+  const retry = document.querySelector("#queue-popup-retry");
+  const cancel = document.querySelector("#queue-popup-cancel");
+  const processed = Number(state.processed || 0);
+  const total = Number(state.total || 0);
+  const stage = queueStageLabel(state.activeStage, state.activeStageState);
+  const labels = {
+    idle: state.detected ? `Đã nhận diện ${state.detected} ảnh` : "Chưa nhận diện ảnh manga",
+    running: `${processed}/${total}${stage ? ` · ${stage}` : ""}`,
+    paused: `${processed}/${total} · Đã tạm dừng`,
+    cancelling: `${processed}/${total} · Đang dừng`,
+    cancelled: `${processed}/${total} · Đã hủy`,
+    completed: `${processed}/${total} · Hoàn tất${state.failed ? `, lỗi ${state.failed}` : ""}`,
+    unavailable: "Tab này không hỗ trợ dịch",
+  };
+  status.textContent = labels[state.state] || "Chưa có tác vụ";
+  status.title = status.textContent;
+  start.disabled = !state.canStart;
+  pause.disabled = !state.canPause;
+  pause.textContent = state.state === "paused" ? "▶" : "Ⅱ";
+  pause.title = state.state === "paused" ? "Tiếp tục hàng đợi" : "Tạm dừng hàng đợi";
+  pause.setAttribute("aria-label", pause.title);
+  retry.disabled = !state.canRetry;
+  cancel.disabled = !state.canCancel;
+}
+
+function queueStageLabel(stage, stageState = "") {
+  const stages = {
+    preparing: "Chuẩn bị",
+    "visual-context": "Ngữ cảnh ảnh",
+    detection: "Nhận diện",
+    ocr: "OCR",
+    translation: "Dịch",
+    inpainting: "Xóa chữ",
+    rendering: "Dựng ảnh",
+  };
+  const label = stages[stage] || "";
+  if (!label) return "";
+  if (stageState === "loading") return `Nạp ${label.toLowerCase()}`;
+  return label;
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -296,6 +394,7 @@ async function save() {
     minHeight: Math.max(80, Number(fields.minHeight.value) || DEFAULTS.minHeight),
     minArea: DEFAULTS.minArea,
     autoTranslate: fields.autoTranslate.checked,
+    visualContextMode: fields.visualContextMode.value,
     apiProfiles,
     providerModels: { ...providerModels, [fields.provider.value]: fields.model.value.trim() },
   };
@@ -392,6 +491,7 @@ function renderDiagnostics(data) {
   document.querySelector("#runtime-message").textContent = runtimeIssueLabel(runtime);
   document.querySelector("#active-runtime-size").textContent = formatBytes(runtime.bytes);
   document.querySelector("#legacy-size").textContent = formatBytes(storage.legacyBytes);
+  document.querySelector("#visual-context-cache-size").textContent = formatBytes(storage.visualContextCacheBytes);
   document.querySelector("#reclaimable-size").textContent = formatBytes(storage.reclaimableBytes);
   const other = Number(storage.projectsBytes || 0) + Number(storage.webviewBytes || 0) + Number(storage.otherBytes || 0);
   document.querySelector("#other-size").textContent = formatBytes(other);
@@ -519,15 +619,77 @@ async function cleanStorage(button) {
   }
 }
 
-async function clearCache() {
-  await chrome.runtime.sendMessage({ type: "CLEAR_CACHE" });
-  await updateCacheCount();
-  showMessage("Đã xóa cache.");
+async function clearCache(scope) {
+  const labels = {
+    page: "cache của trang/chapter hiện tại",
+    site: "cache của website hiện tại",
+    all: "toàn bộ cache bản dịch",
+  };
+  if (!confirm(`Xóa ${labels[scope]}? Thao tác này không thể hoàn tác.`)) return;
+  try {
+    const tab = await activeTab();
+    const result = await chrome.runtime.sendMessage({
+      type: "CLEAR_CACHE",
+      payload: { scope, pageUrl: tab?.url || "" },
+    });
+    if (!result?.ok) throw new Error(result?.error || "Không xóa được cache");
+    await updateCacheStats();
+    const removed = result.data || {};
+    showMessage(`Đã xóa ${Number(removed.count || 0)} bản dịch, giải phóng ${formatBytes(removed.bytes)}.`);
+  } catch (error) {
+    showMessage(error.message || "Không xóa được cache.", true);
+  }
 }
 
-async function updateCacheCount() {
-  const result = await chrome.runtime.sendMessage({ type: "CACHE_COUNT" });
-  document.querySelector("#cache-count").textContent = result.ok ? `(${result.count})` : "";
+async function pruneCache() {
+  const button = document.querySelector("#prune-cache");
+  button.disabled = true;
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "CACHE_PRUNE" });
+    if (!result?.ok) throw new Error(result?.error || "Không dọn được cache cũ");
+    await updateCacheStats();
+    showMessage(`Đã dọn ${Number(result.data?.removedCount || 0)} bản dịch cũ, giải phóng ${formatBytes(result.data?.removedBytes)}.`);
+  } catch (error) {
+    showMessage(error.message || "Không dọn được cache cũ.", true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function updateCacheStats() {
+  try {
+    const tab = await activeTab();
+    const result = await chrome.runtime.sendMessage({
+      type: "CACHE_STATS",
+      payload: { pageUrl: tab?.url || "" },
+    });
+    if (!result?.ok) throw new Error(result?.error || "Không đọc được cache");
+    renderCacheStats(result.data);
+  } catch {
+    document.querySelector("#cache-summary").textContent = "Không đọc được";
+  }
+}
+
+function renderCacheStats(data) {
+  const total = data?.total || {};
+  const site = data?.site || {};
+  const page = data?.page || {};
+  const scope = data?.scope || {};
+  const policy = data?.policy || {};
+  const summaryLabel = `${Number(total.count || 0)} bản · ${formatBytes(total.bytes)}`;
+  document.querySelector("#cache-summary").textContent = summaryLabel;
+  document.querySelector("#cache-total").textContent = summaryLabel;
+  document.querySelector("#cache-site").textContent = `${Number(site.count || 0)} · ${formatBytes(site.bytes)}`;
+  document.querySelector("#cache-page").textContent = `${Number(page.count || 0)} · ${formatBytes(page.bytes)}`;
+  document.querySelector("#cache-pipeline").textContent = policy.pipelineVersion || "-";
+  const ageDays = Math.round(Number(policy.maxAgeMs || 0) / 86400000);
+  document.querySelector("#cache-policy").textContent = `${ageDays} ngày · ${formatBytes(policy.maxBytes)} / ${Number(policy.maxEntries || 0)} bản`;
+  const cacheScope = document.querySelector("#cache-scope");
+  cacheScope.textContent = scope.pageKey || scope.siteKey || "Tab hiện tại không có phạm vi web";
+  cacheScope.title = cacheScope.textContent;
+  document.querySelector("#clear-page-cache").disabled = !scope.pageKey || !page.count;
+  document.querySelector("#clear-site-cache").disabled = !scope.siteKey || !site.count;
+  document.querySelector("#clear-cache").disabled = !total.count;
 }
 
 async function updateErrorLog() {

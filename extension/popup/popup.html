@@ -20,6 +20,19 @@
       <label class="toggle"><input id="auto-translate" type="checkbox"><span></span>Dịch tự động</label>
     </section>
 
+    <section class="queue-overview" aria-labelledby="queue-popup-title">
+      <div class="queue-popup-copy">
+        <strong id="queue-popup-title">Hàng đợi trang</strong>
+        <span id="queue-popup-status">Chưa có tác vụ</span>
+      </div>
+      <div class="queue-popup-actions">
+        <button id="queue-popup-start" class="queue-start" type="button" title="Bắt đầu dịch các ảnh được nhận diện" disabled>Dịch trang</button>
+        <button id="queue-popup-pause" class="icon-button" type="button" title="Tạm dừng hàng đợi" aria-label="Tạm dừng hàng đợi" disabled>Ⅱ</button>
+        <button id="queue-popup-retry" class="icon-button" type="button" title="Thử lại các ảnh lỗi" aria-label="Thử lại các ảnh lỗi" disabled>↻</button>
+        <button id="queue-popup-cancel" class="icon-button danger" type="button" title="Hủy hàng đợi" aria-label="Hủy hàng đợi" disabled>■</button>
+      </div>
+    </section>
+
     <main>
       <label>Nhà cung cấp
         <select id="provider">
@@ -63,6 +76,14 @@
         </select>
       </label>
 
+      <label>Ngữ cảnh hình ảnh
+        <select id="visual-context-mode">
+          <option value="off">Tắt</option>
+          <option value="minicpm-v4.6">MiniCPM-V 4.6 · tiết kiệm</option>
+        </select>
+        <small>Chạy local một lần cho mỗi trang; lần đầu sẽ tải model vào kho engine.</small>
+      </label>
+
       <details>
         <summary>Nâng cao</summary>
         <label id="system-prompt-row">System prompt
@@ -93,6 +114,7 @@
           <dt>Runtime 0.70.2</dt><dd id="runtime-health" data-state="missing">-</dd>
           <dt>Dung lượng active</dt><dd id="active-runtime-size">-</dd>
           <dt>Dữ liệu Koharu cũ</dt><dd id="legacy-size">-</dd>
+          <dt>Cache ngữ cảnh ảnh</dt><dd id="visual-context-cache-size">-</dd>
           <dt>Có thể thu hồi</dt><dd id="reclaimable-size">-</dd>
           <dt>Dữ liệu khác</dt><dd id="other-size">-</dd>
         </dl>
@@ -129,6 +151,29 @@
       </div>
     </details>
 
+    <details class="cache-panel">
+      <summary>
+        <span>Cache bản dịch</span>
+        <span id="cache-summary">Đang kiểm tra</span>
+      </summary>
+      <div class="cache-content" aria-live="polite">
+        <dl class="cache-grid">
+          <dt>Toàn bộ</dt><dd id="cache-total">-</dd>
+          <dt>Website này</dt><dd id="cache-site">-</dd>
+          <dt>Trang/chapter này</dt><dd id="cache-page">-</dd>
+          <dt>Pipeline</dt><dd id="cache-pipeline">-</dd>
+          <dt>Tự dọn</dt><dd id="cache-policy">-</dd>
+        </dl>
+        <p id="cache-scope" class="cache-scope"></p>
+        <div class="cache-actions">
+          <button id="clear-page-cache" class="secondary" type="button">Xóa trang này</button>
+          <button id="clear-site-cache" class="secondary" type="button">Xóa website này</button>
+          <button id="prune-cache" class="secondary" type="button">Dọn cache cũ</button>
+          <button id="clear-cache" class="secondary danger-text" type="button">Xóa tất cả</button>
+        </div>
+      </div>
+    </details>
+
     <section class="error-panel" aria-labelledby="error-title">
       <div class="error-heading">
         <div>
@@ -142,7 +187,6 @@
     </section>
 
     <footer>
-      <button id="clear-cache" class="secondary">Xóa cache <span id="cache-count"></span></button>
       <button id="save" class="primary">Lưu cấu hình</button>
     </footer>
     <p id="message" role="status"></p>

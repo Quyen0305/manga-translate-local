@@ -54,7 +54,11 @@ impl StageProcessor for Processor {
             targets.iter().map(|(_, source)| source.clone()),
             self.config.target_language,
         );
-        if let Some(instructions) = self.config.instructions.as_deref() {
+        if let Some(instructions) = input
+            .translation_instructions
+            .as_deref()
+            .or(self.config.instructions.as_deref())
+        {
             request = request.with_instructions(instructions);
         }
         if Translator::supports_vision(&self.config.model)

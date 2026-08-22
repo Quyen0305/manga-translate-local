@@ -54,13 +54,36 @@
 
       if (new URLSearchParams(location.search).has("extension-test")) {
         window.__MANGA_TRANSLATE_TEST__ = true;
+        const removeClosedExtensionHosts = () => {
+          for (const host of document.querySelectorAll("#manga-translate-local-root")) {
+            if (!host.shadowRoot) host.remove();
+          }
+        };
+        new MutationObserver(removeClosedExtensionHosts).observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+        });
+        removeClosedExtensionHosts();
         const params = new URLSearchParams(location.search);
+        if (params.has("virtualize")) {
+          const virtualPage = document.querySelector("#raster-page");
+          let virtualized = false;
+          window.addEventListener("scroll", () => {
+            if (virtualized || scrollY < 500 || !virtualPage.isConnected) return;
+            virtualized = true;
+            const placeholder = document.createElement("div");
+            placeholder.style.height = `${virtualPage.getBoundingClientRect().height}px`;
+            virtualPage.replaceWith(placeholder);
+            setTimeout(() => placeholder.replaceWith(virtualPage), 1500);
+          }, { passive: true });
+        }
         const storageListeners = [];
         const storedSettings = {
           extensionEnabled: !params.has("disabled"),
           autoTranslate: params.has("auto"),
         };
         window.__fixtureMessages = [];
+        window.__fixtureEditorCalls = [];
         window.__setExtensionSettings = async (next) => {
           const changes = {};
           for (const [key, value] of Object.entries(next)) {
@@ -77,6 +100,16 @@
         enableButton.addEventListener("click", () => window.__setExtensionSettings({ extensionEnabled: true }));
         document.querySelector("header").append(disableButton, enableButton);
         const translatedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960"><rect width="720" height="960" fill="white"/><rect x="30" y="30" width="660" height="900" fill="none" stroke="#147d64" stroke-width="10"/><text x="360" y="480" text-anchor="middle" font-family="Arial" font-size="48" fill="#147d64">BẢN DỊCH CACHE</text></svg>`;
+        const editorScene = {
+          sessionId: "fixture-editor-session",
+          width: 720,
+          height: 960,
+          segments: [
+            { id: "S1", sourceText: "HELLO THERE", text: "Xin chào", apiText: "Xin chào", bounds: { x: 110, y: 150, width: 220, height: 130 }, style: { fontFamily: "Arial", fontSize: null, autoFit: true, fontWeight: 400, italic: false, alignment: "center", lineHeight: 1.2 } },
+            { id: "S2", sourceText: "WELCOME BACK", text: "Mừng bạn trở lại", apiText: "Mừng bạn trở lại", bounds: { x: 390, y: 520, width: 230, height: 150 }, style: { fontFamily: "Arial", fontSize: 28, autoFit: false, fontWeight: 700, italic: false, alignment: "center", lineHeight: 1.25 } },
+          ],
+        };
+        let editorExpired = params.has("expired-editor");
         window.chrome = {
           storage: {
             local: {
@@ -86,12 +119,14 @@
             onChanged: { addListener(listener) { storageListeners.push(listener); } },
           },
           runtime: {
+            id: "fixture-extension",
             onMessage: { addListener() {} },
             sendMessage: async (message) => {
               window.__fixtureMessages.push(message.type);
               if (message.type === "LOOKUP_CACHED_IMAGE") return { ok: true, hit: false };
               if (message.type === "TRANSLATE_IMAGE") {
-                await new Promise((resolve) => setTimeout(resolve, 120));
+                const delay = Math.max(0, Number(params.get("delay")) || 120);
+                await new Promise((resolve) => setTimeout(resolve, delay));
                 if (params.has("fail")) {
                   return {
                     ok: false,
@@ -102,15 +137,58 @@
                     reported: true,
                   };
                 }
-                return { ok: true, cached: true, dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(translatedSvg)}` };
+                if (message.payload?.bypassCache) {
+                  editorExpired = false;
+                  editorScene.sessionId = "fixture-recovered-session";
+                }
+                return {
+                  ok: true,
+                  cached: true,
+                  dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(translatedSvg)}`,
+                  cacheKey: "fixture-cache",
+                  editorSessionId: params.has("editor") ? editorScene.sessionId : "",
+                  editorScene: params.has("editor") ? editorScene : null,
+                };
+              }
+              if (message.type === "REFRESH_EDITOR_SESSION") {
+                if (editorExpired) return { ok: false, code: "EDITOR_SESSION_EXPIRED", error: "Phiên chỉnh sửa đã hết hạn", reported: true };
+                return { ok: true, editorSessionId: editorScene.sessionId, editorScene };
+              }
+              if (message.type === "EDIT_TRANSLATION_SEGMENT") {
+                if (editorExpired) return { ok: false, code: "EDITOR_SESSION_EXPIRED", error: "Phiên chỉnh sửa đã hết hạn", reported: true };
+                window.__fixtureEditorCalls.push({
+                  action: message.payload.action,
+                  text: message.payload.text,
+                });
+                const editDelay = Math.max(0, Number(params.get("edit-delay")) || 0);
+                if (editDelay) await new Promise((resolve) => setTimeout(resolve, editDelay));
+                const segment = editorScene.segments.find((item) => item.id === message.payload.segmentId);
+                if (message.payload.action === "render") {
+                  segment.text = message.payload.text;
+                  segment.style = { ...segment.style, ...message.payload.style };
+                }
+                if (message.payload.action === "retranslate") segment.text = "Bản dịch mới";
+                if (message.payload.action === "reset") segment.text = segment.apiText;
+                const editedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="960"><rect width="720" height="960" fill="white"/><rect x="30" y="30" width="660" height="900" fill="none" stroke="#147d64" stroke-width="10"/><text x="360" y="480" text-anchor="middle" font-family="Arial" font-size="42" fill="#147d64">${segment.text}</text></svg>`;
+                return { ok: true, dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(editedSvg)}`, cacheKey: "fixture-cache", editorSessionId: editorScene.sessionId, editorScene };
               }
               return { ok: true };
             },
           },
         };
-        const script = document.createElement("script");
-        script.src = "/extension/content.js";
-        document.body.appendChild(script);
+        const queueScript = document.createElement("script");
+        queueScript.src = "/extension/queue-utils.js";
+        queueScript.addEventListener("load", () => {
+          const editorScript = document.createElement("script");
+          editorScript.src = "/extension/editor-utils.js";
+          editorScript.addEventListener("load", () => {
+            const contentScript = document.createElement("script");
+            contentScript.src = "/extension/content.js";
+            document.body.appendChild(contentScript);
+          });
+          document.body.appendChild(editorScript);
+        });
+        document.body.appendChild(queueScript);
       }
     </script>
   </body>

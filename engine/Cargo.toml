@@ -1,6 +1,6 @@
 [package]
 name = "manga-translate"
-version = "0.13.0"
+version = "0.16.0"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
@@ -26,6 +26,7 @@ koharu-secrets = { path = "../vendor/koharu-0.70.2/crates/koharu-secrets" }
 koharu-translator = { path = "../vendor/koharu-0.70.2/crates/koharu-translator" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sysinfo = "0.39"
 reqwest = { version = "0.13", features = ["json"] }
 tempfile = "3.24"
@@ -51,3 +52,13 @@ winreg = "0.56"
 
 [features]
 cuda = []
+
+# The Koharu dependency graph produces very large MSVC PDB and incremental
+# caches. Local checks/tests do not need debugger symbols in this application.
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false

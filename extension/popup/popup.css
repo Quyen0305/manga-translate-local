@@ -8,6 +8,16 @@ header p { margin: 3px 0 0; color: #aeb4bf; font-size: 11px; }
 #engine-status[data-state="ready"] { background: #176b59; color: #fff; }
 #engine-status[data-state="offline"] { background: #8e3339; color: #fff; }
 .mode-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #dfe2e6; background: #fff; }
+.queue-overview { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 56px; padding: 9px 16px; border-bottom: 1px solid #dfe2e6; background: #fff; }
+.queue-popup-copy { display: grid; min-width: 0; gap: 3px; }
+.queue-popup-copy strong { color: #343840; font-size: 12px; }
+#queue-popup-status { overflow: hidden; color: #6e747d; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.queue-popup-actions { display: grid; grid-template-columns: 72px repeat(3, 35px); gap: 5px; }
+.queue-popup-actions .icon-button { min-height: 35px; }
+.queue-popup-actions .queue-start { min-width: 0; min-height: 35px; padding: 0 7px; border: 1px solid #b8c5c1; background: #edf6f3; color: #176b59; font-size: 10px; }
+.queue-popup-actions .queue-start:disabled { border-color: #d7dade; background: #f3f4f5; color: #a8adb4; cursor: default; }
+.queue-popup-actions .danger { color: #a52f38; }
+.queue-popup-actions .icon-button:disabled { color: #a8adb4; cursor: default; }
 main { display: grid; gap: 11px; padding: 14px 16px 10px; }
 label { display: grid; gap: 5px; color: #555b64; font-size: 11px; font-weight: 700; }
 input, select, textarea { width: 100%; border: 1px solid #c9cdd3; border-radius: 5px; background: #fff; color: #202226; padding: 8px 9px; font: 13px Arial, sans-serif; outline: none; letter-spacing: 0; }
@@ -63,6 +73,18 @@ details > label { margin-top: 10px; }
 .cleanup-row button { min-width: 0; min-height: 30px; padding: 0 7px; font-size: 10px; }
 .system-actions { display: grid; grid-template-columns: 35px; gap: 7px; margin-top: 10px; }
 .system-actions .secondary:disabled { color: #9da2aa; cursor: default; }
+.cache-panel { margin: 0 16px 8px; border: 1px solid #d8dade; border-radius: 6px; background: #fff; overflow: hidden; }
+.cache-panel summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 40px; padding: 0 11px; cursor: pointer; color: #343840; font-size: 12px; font-weight: 700; }
+#cache-summary { min-width: 0; overflow: hidden; color: #747a84; font-size: 10px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.cache-content { padding: 10px 11px 11px; border-top: 1px solid #e4e6e9; }
+.cache-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; margin: 0; }
+.cache-grid dt { color: #686e77; font-size: 10px; }
+.cache-grid dd { max-width: 190px; margin: 0; color: #343840; font-size: 10px; font-weight: 700; overflow-wrap: anywhere; text-align: right; }
+.cache-scope { min-height: 14px; margin: 9px 0 0; overflow: hidden; color: #777d86; font: 10px Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.cache-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+.cache-actions button { min-width: 0; padding: 0 6px; font-size: 10px; line-height: 1.15; }
+.cache-actions button:disabled { color: #9da2aa; cursor: default; }
+.danger-text { color: #a52f38; }
 .error-panel { margin: 0 16px 6px; border: 1px solid #d8dade; border-radius: 6px; background: #fff; overflow: hidden; }
 .error-heading { display: flex; align-items: center; justify-content: space-between; min-height: 40px; padding: 4px 7px 4px 11px; border-bottom: 1px solid #e4e6e9; }
 .error-heading > div { display: flex; align-items: center; gap: 7px; }
@@ -79,7 +101,7 @@ details > label { margin-top: 10px; }
 .error-message { margin: 0 0 6px; color: #2f3338; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
 .error-meta, .error-hint { margin: 3px 0 0; color: #686e77; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
 .error-hint { color: #356f61; }
-footer { display: flex; justify-content: space-between; gap: 8px; padding: 10px 16px 14px; }
+footer { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
 button { min-height: 34px; border-radius: 5px; padding: 0 12px; border: 1px solid transparent; cursor: pointer; font-weight: 700; }
 button.primary { background: #147d64; color: #fff; }
 button.primary:hover { background: #106b56; }

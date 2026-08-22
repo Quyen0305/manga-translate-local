@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Json, State};
+use axum::extract::{DefaultBodyLimit, Json, Path, State};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::diagnostics::{
     CudaDiagnostics, StorageDiagnostics, cleanup_storage as clean_storage, legacy_koharu_running,
 };
+use crate::editor::EditorRequest;
 use crate::engine::{KOHARU_VERSION, TranslationSettings};
 use crate::error::AppError;
 use crate::models::ModelRequest;
@@ -32,6 +33,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         "x-mt-target-language",
         "x-mt-system-prompt",
         "x-mt-filename",
+        "x-mt-job-id",
+        "x-mt-visual-context-mode",
     ]
     .into_iter()
     .map(|value| HeaderName::from_static(value))
@@ -47,7 +50,14 @@ pub fn router(state: Arc<AppState>) -> Router {
             })
         }))
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-        .allow_headers(allowed_headers);
+        .allow_headers(allowed_headers)
+        .expose_headers([
+            HeaderName::from_static("x-mt-job-id"),
+            HeaderName::from_static("x-mt-visual-context"),
+            HeaderName::from_static("x-mt-visual-context-message"),
+            HeaderName::from_static("x-mt-editor-session"),
+            HeaderName::from_static("x-request-id"),
+        ]);
 
     Router::new()
         .route("/health", get(health))
@@ -59,9 +69,17 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/v1/engine/restart", post(restart_engine))
         .route("/api/v1/engine/retry-gpu", post(retry_gpu))
         .route("/api/v1/engine/policy", post(update_engine_policy))
+        .route("/api/v1/jobs/{job_id}", get(job_status))
+        .route("/api/v1/jobs/{job_id}/cancel", post(cancel_job))
         .route("/api/v1/storage/cleanup", post(cleanup_storage))
         .route("/api/v1/models", post(models))
         .route("/api/v1/translate-image", post(translate_image))
+        .route("/api/v1/editor/{session_id}", get(editor_scene))
+        .route("/api/v1/editor/{session_id}/render", post(editor_render))
+        .route(
+            "/api/v1/editor/{session_id}/retranslate",
+            post(editor_retranslate),
+        )
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(state.config.max_image_bytes))
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -233,6 +251,7 @@ async fn cleanup_storage(
     if ![
         "downloads",
         "staging",
+        "visual-context-cache",
         "legacy-runtime",
         "legacy-models",
         "legacy-cache",
@@ -288,10 +307,20 @@ async fn translate_image(
     body: Bytes,
 ) -> Response {
     let request_id = Uuid::new_v4();
+    let job_id = match translation_job_id(&headers) {
+        Ok(job_id) => job_id,
+        Err(error) => return error.response(request_id),
+    };
+    let visual_context_enabled =
+        header(&headers, "x-mt-visual-context-mode") == crate::visual_context::MODE;
+    if let Err(error) = state.jobs.create(job_id.clone(), visual_context_enabled) {
+        return AppError::internal(format!("Không tạo được translation job: {error:#}"))
+            .response(request_id);
+    }
     let started = Instant::now();
-    let result = translate_inner(&state, &headers, body).await;
+    let result = translate_inner(&state, &headers, body, &job_id).await;
     match result {
-        Ok(bytes) => {
+        Ok(output) => {
             tracing::info!(
                 request_id = %request_id,
                 duration_ms = started.elapsed().as_millis(),
@@ -299,7 +328,7 @@ async fn translate_image(
                 model = %header(&headers, "x-mt-model"),
                 "image translated"
             );
-            let mut response = bytes.into_response();
+            let mut response = output.bytes.into_response();
             response
                 .headers_mut()
                 .insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
@@ -311,9 +340,67 @@ async fn translate_image(
                 HeaderValue::from_str(&request_id.to_string())
                     .unwrap_or_else(|_| HeaderValue::from_static("invalid")),
             );
+            if let Some(session_id) = output.editor_session_id
+                && let Ok(value) = HeaderValue::from_str(&session_id)
+            {
+                response.headers_mut().insert("x-mt-editor-session", value);
+            }
+            response.headers_mut().insert(
+                "x-mt-job-id",
+                HeaderValue::from_str(&job_id)
+                    .unwrap_or_else(|_| HeaderValue::from_static("invalid")),
+            );
+            if let Some(job) = state.jobs.status(&job_id) {
+                if let Some(context_state) = job.visual_context_state.as_deref()
+                    && let Ok(value) = HeaderValue::from_str(context_state)
+                {
+                    response.headers_mut().insert("x-mt-visual-context", value);
+                }
+                if let Some(message) = job.visual_context_message.as_deref()
+                    && let Ok(value) = HeaderValue::from_str(&urlencoding::encode(message))
+                {
+                    response
+                        .headers_mut()
+                        .insert("x-mt-visual-context-message", value);
+                }
+            }
             response
         }
-        Err(error) => error.response(request_id),
+        Err(error) => {
+            if error.code == "JOB_CANCELLED" {
+                state.jobs.mark_cancelled(&job_id);
+            } else {
+                state.jobs.fail(&job_id, &error.message);
+            }
+            error.response(request_id)
+        }
+    }
+}
+
+async fn job_status(State(state): State<Arc<AppState>>, Path(job_id): Path<String>) -> Response {
+    job_status_response(&state.jobs, &job_id)
+}
+
+fn job_status_response(jobs: &crate::jobs::JobRegistry, job_id: &str) -> Response {
+    match jobs.status(job_id) {
+        Some(status) => (StatusCode::OK, axum::Json(status)).into_response(),
+        // Polling can arrive before the image POST has finished creating its job.
+        None => StatusCode::NO_CONTENT.into_response(),
+    }
+}
+
+async fn cancel_job(State(state): State<Arc<AppState>>, Path(job_id): Path<String>) -> Response {
+    if !state.jobs.cancel(&job_id) {
+        return AppError::new(
+            "JOB_NOT_CANCELLABLE",
+            StatusCode::CONFLICT,
+            "Tác vụ không tồn tại hoặc đã kết thúc",
+        )
+        .response(Uuid::new_v4());
+    }
+    match state.jobs.status(&job_id) {
+        Some(status) => (StatusCode::OK, axum::Json(status)).into_response(),
+        None => AppError::internal("Không đọc lại được trạng thái tác vụ").response(Uuid::new_v4()),
     }
 }
 
@@ -321,7 +408,8 @@ async fn translate_inner(
     state: &Arc<AppState>,
     headers: &HeaderMap,
     body: Bytes,
-) -> Result<Vec<u8>, AppError> {
+    job_id: &str,
+) -> Result<crate::engine::TranslationOutput, AppError> {
     let content_type = header(headers, "content-type")
         .split(';')
         .next()
@@ -334,6 +422,80 @@ async fn translate_inner(
         return Err(AppError::validation("Image is empty"));
     }
 
+    let settings = translation_settings(state, headers).await?;
+    state
+        .engine
+        .translate(
+            body.to_vec(),
+            safe_filename(&header(headers, "x-mt-filename")),
+            settings,
+            job_id.to_owned(),
+            state.jobs.clone(),
+        )
+        .await
+}
+
+async fn editor_scene(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> Response {
+    match state.engine.editor_scene(&session_id) {
+        Ok(scene) => (StatusCode::OK, Json(scene)).into_response(),
+        Err(error) => error.response(Uuid::new_v4()),
+    }
+}
+
+async fn editor_render(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(request): Json<EditorRequest>,
+) -> Response {
+    editor_render_inner(&state, session_id, request, None).await
+}
+
+async fn editor_retranslate(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<EditorRequest>,
+) -> Response {
+    let settings = match translation_settings(&state, &headers).await {
+        Ok(settings) => settings,
+        Err(error) => return error.response(Uuid::new_v4()),
+    };
+    editor_render_inner(&state, session_id, request, Some(settings)).await
+}
+
+async fn editor_render_inner(
+    state: &Arc<AppState>,
+    session_id: String,
+    request: EditorRequest,
+    settings: Option<TranslationSettings>,
+) -> Response {
+    let request_id = Uuid::new_v4();
+    match state
+        .engine
+        .edit_render(session_id.clone(), request, settings)
+        .await
+    {
+        Ok(output) => {
+            let mut response = output.bytes.into_response();
+            response
+                .headers_mut()
+                .insert(CONTENT_TYPE, HeaderValue::from_static("image/png"));
+            if let Ok(value) = HeaderValue::from_str(&output.scene.session_id) {
+                response.headers_mut().insert("x-mt-editor-session", value);
+            }
+            response
+        }
+        Err(error) => error.response(request_id),
+    }
+}
+
+async fn translation_settings(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+) -> Result<TranslationSettings, AppError> {
     let provider = header(headers, "x-mt-provider");
     let mut settings = TranslationSettings {
         model: if provider == "deepl" {
@@ -349,6 +511,7 @@ async fn translate_inner(
         system_prompt: urlencoding::decode(&header(headers, "x-mt-system-prompt"))
             .map(|value| value.into_owned())
             .unwrap_or_default(),
+        visual_context_mode: default_string(header(headers, "x-mt-visual-context-mode"), "off"),
         provider,
     };
     validate_translation(&settings)?;
@@ -358,14 +521,17 @@ async fn translate_inner(
             .resolve_deepl(&settings.api_key, &settings.base_url)
             .await?;
     }
-    state
-        .engine
-        .translate(
-            body.to_vec(),
-            safe_filename(&header(headers, "x-mt-filename")),
-            settings,
-        )
-        .await
+    Ok(settings)
+}
+
+fn translation_job_id(headers: &HeaderMap) -> Result<String, AppError> {
+    let value = header(headers, "x-mt-job-id");
+    if value.is_empty() {
+        return Ok(Uuid::new_v4().to_string());
+    }
+    Uuid::parse_str(&value)
+        .map(|id| id.to_string())
+        .map_err(|_| AppError::validation("Translation job ID không hợp lệ"))
 }
 
 fn validate_translation(settings: &TranslationSettings) -> Result<(), AppError> {
@@ -396,6 +562,9 @@ fn validate_translation(settings: &TranslationSettings) -> Result<(), AppError> 
         return Err(AppError::validation(
             "OpenAI-compatible requires a Base URL",
         ));
+    }
+    if !["off", crate::visual_context::MODE].contains(&settings.visual_context_mode.as_str()) {
+        return Err(AppError::validation("Visual context mode is invalid"));
     }
     Ok(())
 }
@@ -509,7 +678,47 @@ mod tests {
             base_url: String::new(),
             target_language: "vi".into(),
             system_prompt: String::new(),
+            visual_context_mode: "off".into(),
         };
         assert!(validate_translation(&settings).is_err());
+    }
+
+    #[test]
+    fn translation_job_id_accepts_uuid_and_generates_default() {
+        let generated = translation_job_id(&HeaderMap::new()).expect("generated job id");
+        assert!(Uuid::parse_str(&generated).is_ok());
+
+        let expected = Uuid::new_v4();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-mt-job-id",
+            HeaderValue::from_str(&expected.to_string()).expect("job header"),
+        );
+        assert_eq!(
+            translation_job_id(&headers).expect("valid job id"),
+            expected.to_string()
+        );
+    }
+
+    #[test]
+    fn translation_job_id_rejects_arbitrary_text() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-mt-job-id", HeaderValue::from_static("not-a-uuid"));
+        let error = translation_job_id(&headers).expect_err("invalid job id");
+        assert_eq!(error.code, "VALIDATION_ERROR");
+    }
+
+    #[test]
+    fn polling_an_uncreated_job_is_an_empty_non_error_response() {
+        let jobs = crate::jobs::JobRegistry::default();
+        assert_eq!(
+            job_status_response(&jobs, "not-created").status(),
+            StatusCode::NO_CONTENT
+        );
+        jobs.create("created".into(), false).unwrap();
+        assert_eq!(
+            job_status_response(&jobs, "created").status(),
+            StatusCode::OK
+        );
     }
 }

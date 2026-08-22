@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <title>Cache v2 fixture</title>
+  </head>
+  <body>
+    <pre id="result">running</pre>
+    <script type="module">
+      const output = document.querySelector("#result");
+      try {
+        await deleteDatabase("manga-translate-cache");
+        await seedVersionOne();
+        const { cacheClear, cachePrune, cachePut, cacheStats } = await import("/extension/cache.js");
+
+        const migrated = await cacheStats();
+        assert(migrated.total.count === 1, "v1 entry was not preserved");
+        assert(migrated.total.bytes === 3, "v1 byte size was not measured");
+
+        const now = Date.now();
+        await cachePut({
+          key: "page-a",
+          bytes: new Uint8Array([1, 2, 3, 4]).buffer,
+          contentType: "image/png",
+          siteKey: "https://mangadex.org",
+          pageKey: "https://mangadex.org/chapter/a",
+          siteKeys: ["https://mangadex.org"],
+          pageKeys: ["https://mangadex.org/chapter/a"],
+          pipelineVersion: "current",
+          createdAt: now,
+        });
+        await cachePut({
+          key: "page-b",
+          bytes: new Uint8Array([1, 2, 3, 4, 5]).buffer,
+          contentType: "image/png",
+          siteKey: "https://reader.example",
+          pageKey: "https://reader.example/chapter/b",
+          siteKeys: ["https://reader.example"],
+          pageKeys: ["https://reader.example/chapter/b"],
+          pipelineVersion: "old",
+          createdAt: now,
+        });
+
+        const scoped = await cacheStats({
+          siteKey: "https://mangadex.org",
+          pageKey: "https://mangadex.org/chapter/a",
+        });
+        assert(scoped.total.count === 3 && scoped.total.bytes === 12, "total stats are incorrect");
+        assert(scoped.site.count === 1 && scoped.page.bytes === 4, "scoped stats are incorrect");
+
+        const cleared = await cacheClear({
+          scope: "page",
+          pageKey: "https://mangadex.org/chapter/a",
+        });
+        assert(cleared.count === 1 && cleared.bytes === 4, "page cleanup is incorrect");
+
+        const pruned = await cachePrune({
+          pipelineVersion: "current",
+          maxAgeMs: 90 * 86400000,
+          maxBytes: 1024,
+          maxEntries: 100,
+        });
+        assert(pruned.removedCount === 1 && pruned.removedBytes === 5, "incompatible cleanup is incorrect");
+        const finalStats = await cacheStats();
+        assert(finalStats.total.count === 1 && finalStats.total.bytes === 3, "legacy cache was not retained");
+
+        await cacheClear();
+        await cachePut({
+          key: "lru-old",
+          bytes: new Uint8Array(6).buffer,
+          contentType: "image/png",
+          pipelineVersion: "current",
+        });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await cachePut({
+          key: "lru-new",
+          bytes: new Uint8Array(7).buffer,
+          contentType: "image/png",
+          pipelineVersion: "current",
+        });
+        const lru = await cachePrune({
+          pipelineVersion: "current",
+          maxAgeMs: 90 * 86400000,
+          maxBytes: 7,
+          maxEntries: 100,
+        });
+        const lruStats = await cacheStats();
+        assert(lru.removedCount === 1 && lru.removedBytes === 6, "LRU did not remove the oldest entry");
+        assert(lruStats.total.count === 1 && lruStats.total.bytes === 7, "LRU retained the wrong entry");
+
+        output.dataset.state = "passed";
+        output.textContent = JSON.stringify({ migrated, scoped, cleared, pruned, finalStats, lru, lruStats }, null, 2);
+      } catch (error) {
+        output.dataset.state = "failed";
+        output.textContent = error.stack || error.message;
+      }
+
+      function assert(condition, message) {
+        if (!condition) throw new Error(message);
+      }
+
+      function deleteDatabase(name) {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.deleteDatabase(name);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+          request.onblocked = () => reject(new Error("database deletion was blocked"));
+        });
+      }
+
+      function seedVersionOne() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open("manga-translate-cache", 1);
+          request.onupgradeneeded = () => {
+            const store = request.result.createObjectStore("translations", { keyPath: "key" });
+            store.createIndex("createdAt", "createdAt");
+          };
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction("translations", "readwrite");
+            tx.objectStore("translations").put({
+              key: "legacy",
+              bytes: new Uint8Array([1, 2, 3]).buffer,
+              contentType: "image/png",
+              createdAt: Date.now(),
+            });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        });
+      }
+    </script>
+  </body>
+</html>
